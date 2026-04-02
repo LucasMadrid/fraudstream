@@ -1,6 +1,6 @@
 services:
   broker:
-    image: confluentinc/cp-kafka:7.6.1
+    image: confluentinc/cp-kafka:7.9.6
     hostname: broker
     container_name: broker
     ports:
@@ -27,7 +27,7 @@ services:
       retries: 10
 
   schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.1
+    image: confluentinc/cp-schema-registry:7.9.6
     hostname: schema-registry
     container_name: schema-registry
     depends_on:
@@ -80,7 +80,7 @@ services:
       retries: 5
 
   flink-jobmanager:
-    image: apache/flink:1.19-scala_2.12
+    image: apache/flink:1.20.3-scala_2.12
     platform: linux/amd64
     container_name: flink-jobmanager
     hostname: flink-jobmanager
@@ -106,7 +106,7 @@ services:
       retries: 10
 
   flink-taskmanager:
-    image: apache/flink:1.19-scala_2.12
+    image: apache/flink:1.20.3-scala_2.12
     platform: linux/amd64
     container_name: flink-taskmanager
     hostname: flink-taskmanager

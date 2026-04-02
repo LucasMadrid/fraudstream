@@ -1,11 +1,11 @@
-# Multi-stage Dockerfile for PyFlink 1.19 worker image
+# Multi-stage Dockerfile for PyFlink 1.20 worker image
 # Context: repo root (.)
 # Build: docker build -f infra/flink/Dockerfile --build-arg PROCESSOR_VERSION=... .
 
 # ============================================================================
 # BUILDER STAGE — compile C extensions and install Python deps into a venv
 # ============================================================================
-FROM apache/flink:1.19-scala_2.12 AS builder
+FROM apache/flink:1.20.3-scala_2.12 AS builder
 
 ARG PROCESSOR_VERSION=002-stream-processor@1.0.0
 
@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir ".[processing]"
 # ============================================================================
 # RUNTIME STAGE — minimal final image, no build tools
 # ============================================================================
-FROM apache/flink:1.19-scala_2.12
+FROM apache/flink:1.20.3-scala_2.12
 
 ARG PROCESSOR_VERSION=002-stream-processor@1.0.0
 ENV PROCESSOR_VERSION=$PROCESSOR_VERSION \
