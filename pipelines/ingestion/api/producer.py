@@ -277,7 +277,8 @@ class ProducerService:
                 logger.info(
                     "published",
                     extra={
-                        "transaction_id": transaction_id,  # lgtm[py/clear-text-logging-sensitive-data]
+                        # lgtm[py/clear-text-logging-sensitive-data]
+                        "transaction_id": transaction_id,
                         "component": "api-producer",
                         "timestamp": int(time.time() * 1000),
                         "log_level": "INFO",
