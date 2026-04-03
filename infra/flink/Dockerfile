@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libmaxminddb-dev \
     python3.11-dev \
+    python3.11-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Isolated venv so nothing bleeds into the system Python
