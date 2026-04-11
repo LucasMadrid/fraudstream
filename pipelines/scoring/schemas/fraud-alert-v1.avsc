@@ -1,0 +1,44 @@
+{
+  "type": "record",
+  "name": "FraudAlert",
+  "namespace": "com.fraudstream.alerts.v1",
+  "doc": "Structured fraud alert emitted to txn.fraud.alerts for every suspicious transaction.",
+  "fields": [
+    {
+      "name": "transaction_id",
+      "type": "string",
+      "doc": "Unique transaction identifier — matches the original transaction_id from txn.api."
+    },
+    {
+      "name": "account_id",
+      "type": "string",
+      "doc": "Account identifier of the transaction owner."
+    },
+    {
+      "name": "matched_rule_names",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "doc": "Names of all rules that matched this transaction (e.g. VEL-001, ND-003)."
+    },
+    {
+      "name": "severity",
+      "type": {
+        "type": "enum",
+        "name": "AlertSeverity",
+        "symbols": ["low", "medium", "high", "critical"],
+        "doc": "Highest severity label among all matched rules."
+      },
+      "doc": "Highest severity label among all matched rules."
+    },
+    {
+      "name": "evaluation_timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Wall-clock epoch milliseconds when the rule evaluation completed."
+    }
+  ]
+}

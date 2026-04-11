@@ -1,0 +1,35 @@
+groups:
+  - name: fraud_rule_engine
+    rules:
+      # Constitution §VIII gate: DLQ depth alert must fire within 60 seconds of
+      # first message arriving on txn.fraud.alerts.dlq (resolves OR-002 / C1).
+      - alert: FraudAlertsDLQDepthHigh
+        expr: kafka_consumer_group_lag{topic="txn.fraud.alerts.dlq"} > 0
+        for: 60s
+        labels:
+          severity: warning
+          team: fraud-platform
+          runbook_url: https://wiki.internal/runbooks/fraud-rule-engine/dlq-depth-high
+        annotations:
+          summary: "Fraud alerts DLQ has unconsumed messages"
+          description: >
+            Topic txn.fraud.alerts.dlq has a consumer lag > 0 for more than 60 seconds.
+            This indicates Kafka delivery failures or PostgreSQL unavailability routing
+            records to the DLQ. Investigate AlertKafkaSink and AlertPostgresSink logs.
+
+      # Silent evaluator failure detection: if no rules have flagged any transaction
+      # for 15 minutes, the evaluator may have silently stopped working.
+      - alert: FraudFlagRateZero
+        expr: sum(rate(rule_flags_total[5m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+          team: fraud-platform
+          runbook_url: https://wiki.internal/runbooks/fraud-rule-engine/flag-rate-zero
+        annotations:
+          summary: "Fraud rule engine has not flagged any transaction in 15 minutes"
+          description: >
+            The sum of rule_flags_total rate over the last 5 minutes has been zero for
+            15 consecutive minutes. This may indicate a silent evaluator failure, an
+            empty rule set, or absence of traffic. Verify the Flink job is running,
+            rules.yaml is loaded, and enriched transactions are flowing on txn.enriched.

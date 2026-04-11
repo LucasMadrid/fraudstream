@@ -1,0 +1,175 @@
+{
+  "title": "FraudStream Pipeline",
+  "uid": "fraudstream-001",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "tags": ["fraudstream", "kafka", "flink"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Rule Evaluations / sec (by rule)",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(rule_evaluations_total[1m])",
+          "legendFormat": "{{rule_id}} ({{rule_family}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "min": 0 }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Fraud Flags / sec (by rule & severity)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(rule_flags_total[1m])",
+          "legendFormat": "{{rule_id}} [{{severity}}]"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "min": 0 }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total Fraud Flags (all time)",
+      "gridPos": { "x": 0, "y": 8, "w": 6, "h": 4 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rule_flags_total)",
+          "legendFormat": "Total flags"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Critical Severity Flags (all time)",
+      "gridPos": { "x": 6, "y": 8, "w": 6, "h": 4 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rule_flags_total{severity=\"critical\"})",
+          "legendFormat": "Critical"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "DLQ Events (all time)",
+      "gridPos": { "x": 12, "y": 8, "w": 6, "h": 4 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(dlq_events_total)",
+          "legendFormat": "DLQ"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "orange", "value": 1 }] } } }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Dedup Skipped (all time)",
+      "gridPos": { "x": 18, "y": 8, "w": 6, "h": 4 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "dedup_skipped_total",
+          "legendFormat": "Dedup"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": 0 }] } } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Enrichment Latency (p50 / p95 / p99) ms",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(enrichment_latency_ms_bucket[1m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(enrichment_latency_ms_bucket[1m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(enrichment_latency_ms_bucket[1m]))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "min": 0 }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Flags by Severity / sec",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (severity) (rate(rule_flags_total[1m]))",
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "min": 0 }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Checkpoint Failures",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 6 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(checkpoint_failures_total[1m])",
+          "legendFormat": "failures/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "min": 0, "color": { "fixedColor": "red", "mode": "fixed" } }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Consumer Lag (records)",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 6 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "consumer_lag_records",
+          "legendFormat": "lag"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0 }
+      }
+    }
+  ]
+}

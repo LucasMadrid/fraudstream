@@ -59,7 +59,7 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing]"
+          pip install -e ".[dev,processing,scoring]"
 
       - name: Run unit tests with coverage
         run: |
@@ -106,6 +106,8 @@ jobs:
             ["specs/001-kafka-ingestion-pipeline/contracts/dlq-envelope-v1.avsc"]="pipelines/ingestion/schemas/dlq_envelope_v1.avsc"
             ["specs/002-flink-stream-processor/contracts/enriched-txn-v1.avsc"]="pipelines/processing/schemas/enriched-txn-v1.avsc"
             ["specs/002-flink-stream-processor/contracts/processing-dlq-v1.avsc"]="pipelines/processing/schemas/processing-dlq-v1.avsc"
+            ["specs/003-fraud-rule-engine/contracts/fraud-alert-v1.avsc"]="pipelines/scoring/schemas/fraud-alert-v1.avsc"
+            ["specs/003-fraud-rule-engine/contracts/fraud-alert-dlq-v1.avsc"]="pipelines/scoring/schemas/fraud-alert-dlq-v1.avsc"
           )
 
           divergence_found=0
@@ -226,6 +228,8 @@ jobs:
             ["dlq-envelope-value"]="pipelines/ingestion/schemas/dlq_envelope_v1.avsc"
             ["txn-enriched-value"]="pipelines/processing/schemas/enriched-txn-v1.avsc"
             ["txn-processing-dlq-value"]="pipelines/processing/schemas/processing-dlq-v1.avsc"
+            ["txn.fraud.alerts-value"]="pipelines/scoring/schemas/fraud-alert-v1.avsc"
+            ["txn.fraud.alerts-dlq-value"]="pipelines/scoring/schemas/fraud-alert-dlq-v1.avsc"
           )
 
           failed=0
@@ -410,7 +414,7 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing]"
+          pip install -e ".[dev,processing,scoring]"
 
       - name: Download GeoLite2 database
         # MAXMIND_LICENCE_KEY is a repository secret (see docs/security-policy.md).

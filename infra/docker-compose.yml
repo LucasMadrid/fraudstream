@@ -52,6 +52,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts:/etc/prometheus/rules:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -71,6 +72,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       - prometheus
     healthcheck:
@@ -142,6 +145,26 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    hostname: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: fraudstream
+      POSTGRES_USER: fraudstream
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fraudstream}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/migrations/001_create_fraud_alerts.sql:/docker-entrypoint-initdb.d/001_create_fraud_alerts.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "fraudstream", "-d", "fraudstream"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   grafana-data:
   minio-data:
+  postgres-data:
