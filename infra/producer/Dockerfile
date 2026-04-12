@@ -3,26 +3,30 @@
 # Build: docker build -f infra/producer/Dockerfile .
 
 # ============================================================================
-# BUILDER STAGE — install Python deps into an isolated venv
+# BUILDER STAGE
 # ============================================================================
 FROM python:3.11-slim AS builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     VIRTUAL_ENV="/opt/venv"
 
-RUN pip install --upgrade pip setuptools wheel
-
-# Copy source — pyproject.toml first so dependency layer is cached independently
+# ── Layer 1: external dependencies (slow, but cached until pyproject.toml changes) ──
+# --prefer-binary forces prebuilt wheels — avoids compiling confluent-kafka/librdkafka from source
 COPY pyproject.toml ./
-COPY pipelines/ ./pipelines/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --prefer-binary \
+        "confluent-kafka[schema-registry]>=2.3" \
+        "httpx>=0.27" \
+        "fastavro>=1.9" \
+        "opentelemetry-sdk>=1.24" \
+        "opentelemetry-exporter-otlp-proto-http>=1.24" \
+        "prometheus-client>=0.20"
 
-# Install base deps only (no processing/scoring/dev extras)
-RUN pip install --no-cache-dir .
+# ── Layer 2: local package (fast — no external downloads, just builds the local wheel) ──
+COPY pipelines/ ./pipelines/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-build-isolation --no-deps .
 
 # ============================================================================
 # RUNTIME STAGE — minimal final image, no build tools
@@ -44,7 +48,6 @@ WORKDIR /opt/app
 
 EXPOSE 8080
 
-# Smoke-test: verify the producer package is importable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD python3.11 -c "from pipelines.ingestion.api import producer" || exit 1
 

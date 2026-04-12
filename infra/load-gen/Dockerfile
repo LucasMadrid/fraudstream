@@ -3,25 +3,29 @@
 # Build: docker build -f infra/load-gen/Dockerfile .
 
 # ============================================================================
-# BUILDER STAGE — install Python deps into an isolated venv
+# BUILDER STAGE
 # ============================================================================
 FROM python:3.11-slim AS builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     VIRTUAL_ENV="/opt/venv"
 
-RUN pip install --upgrade pip setuptools wheel
-
+# ── Layer 1: external dependencies (slow, cached until pyproject.toml changes) ──
 COPY pyproject.toml ./
-COPY pipelines/ ./pipelines/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --prefer-binary \
+        "confluent-kafka[schema-registry]>=2.3" \
+        "httpx>=0.27" \
+        "fastavro>=1.9" \
+        "opentelemetry-sdk>=1.24" \
+        "opentelemetry-exporter-otlp-proto-http>=1.24" \
+        "prometheus-client>=0.20"
 
-# Base deps cover confluent-kafka + fastavro needed by generate_transactions.py
-RUN pip install --no-cache-dir .
+# ── Layer 2: local package (fast — no external downloads) ──
+COPY pipelines/ ./pipelines/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-build-isolation --no-deps .
 
 # ============================================================================
 # RUNTIME STAGE
@@ -45,6 +49,4 @@ WORKDIR /opt/app
 RUN useradd -r -s /bin/false appuser
 USER appuser
 
-# Default: run indefinitely with 500ms delay between transactions.
-# Override CMD or pass args: docker run load-gen --count 100 --delay 200
 CMD ["python3.11", "scripts/generate_transactions.py"]

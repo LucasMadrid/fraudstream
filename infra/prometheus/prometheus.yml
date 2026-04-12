@@ -8,7 +8,7 @@ rule_files:
 scrape_configs:
   - job_name: "api-producer"
     static_configs:
-      - targets: ["producer-api:8001"]
+      - targets: ["host.docker.internal:8001"]
 
   - job_name: "flink-enrichment"
     static_configs:

@@ -1,5 +1,6 @@
-COMPOSE := docker compose -f infra/docker-compose.yml
-PYTHON  := python3.11
+COMPOSE        := docker compose -f infra/docker-compose.yml
+PYTHON         := python3.11
+export DOCKER_BUILDKIT := 1
 
 ## Kafka connector version compatible with PyFlink/Flink 2.x
 KAFKA_CONNECTOR_VERSION := 4.0.1-2.0
