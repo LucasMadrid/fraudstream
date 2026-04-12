@@ -44,6 +44,24 @@ docker exec broker kafka-topics \
   --config cleanup.policy=delete \
   --config retention.ms=604800000
 
+docker exec broker kafka-topics \
+  --bootstrap-server "${BOOTSTRAP}" \
+  --create --if-not-exists \
+  --topic txn.fraud.alerts \
+  --partitions 4 \
+  --replication-factor "${REPLICATION_FACTOR}" \
+  --config retention.ms=604800000 \
+  --config cleanup.policy=delete
+
+docker exec broker kafka-topics \
+  --bootstrap-server "${BOOTSTRAP}" \
+  --create --if-not-exists \
+  --topic txn.fraud.alerts.dlq \
+  --partitions 1 \
+  --replication-factor "${REPLICATION_FACTOR}" \
+  --config retention.ms=2592000000 \
+  --config cleanup.policy=delete
+
 echo "Topics created:"
 docker exec broker kafka-topics --bootstrap-server "${BOOTSTRAP}" --list | grep "txn\."
 
@@ -68,11 +86,27 @@ _register_schema() {
 }
 
 _register_schema \
+  "txn.api-value" \
+  "${REPO_ROOT}/pipelines/ingestion/schemas/txn_api_v1.avsc"
+
+_register_schema \
+  "txn.api.dlq-value" \
+  "${REPO_ROOT}/pipelines/ingestion/schemas/dlq_envelope_v1.avsc"
+
+_register_schema \
   "txn.enriched-value" \
   "${REPO_ROOT}/specs/002-flink-stream-processor/contracts/enriched-txn-v1.avsc"
 
 _register_schema \
   "txn.processing.dlq-value" \
   "${REPO_ROOT}/specs/002-flink-stream-processor/contracts/processing-dlq-v1.avsc"
+
+_register_schema \
+  "txn.fraud.alerts-value" \
+  "${REPO_ROOT}/pipelines/scoring/schemas/fraud-alert-v1.avsc"
+
+_register_schema \
+  "txn.fraud.alerts.dlq-value" \
+  "${REPO_ROOT}/pipelines/scoring/schemas/fraud-alert-dlq-v1.avsc"
 
 echo "Schema registration complete."

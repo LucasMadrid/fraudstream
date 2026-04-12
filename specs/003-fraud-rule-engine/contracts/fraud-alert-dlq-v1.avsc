@@ -1,0 +1,62 @@
+{
+  "type": "record",
+  "name": "FraudAlertDlq",
+  "namespace": "com.fraudstream.alerts.dlq.v1",
+  "doc": "Dead-letter record for alerts that could not be written to txn.fraud.alerts or PostgreSQL.",
+  "fields": [
+    {
+      "name": "transaction_id",
+      "type": "string",
+      "doc": "Unique transaction identifier from the original FraudAlert."
+    },
+    {
+      "name": "account_id",
+      "type": "string",
+      "doc": "Account identifier from the original FraudAlert."
+    },
+    {
+      "name": "matched_rule_names",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "doc": "Matched rule names from the original FraudAlert."
+    },
+    {
+      "name": "severity",
+      "type": {
+        "type": "enum",
+        "name": "DlqAlertSeverity",
+        "symbols": ["low", "medium", "high", "critical"],
+        "doc": "Severity from the original FraudAlert."
+      },
+      "doc": "Severity from the original FraudAlert."
+    },
+    {
+      "name": "evaluation_timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Epoch milliseconds when the rule evaluation completed (from original FraudAlert)."
+    },
+    {
+      "name": "error_type",
+      "type": "string",
+      "doc": "Classification of the failure: avro_serialisation_error | postgres_unavailable."
+    },
+    {
+      "name": "error_message",
+      "type": "string",
+      "doc": "Human-readable error message describing the failure."
+    },
+    {
+      "name": "failed_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Epoch milliseconds when the write failure occurred."
+    }
+  ]
+}

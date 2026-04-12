@@ -24,11 +24,11 @@ def init_tracer(service_name: str = "api-producer") -> Tracer:
     provider: TracerProvider
 
     if endpoint:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
         resource = Resource.create({"service.name": service_name})
         provider = TracerProvider(resource=resource)
-        exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+        exporter = OTLPSpanExporter(endpoint=endpoint)
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
         logger.info("otel_tracer_initialized", extra={"endpoint": endpoint})

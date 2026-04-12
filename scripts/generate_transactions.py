@@ -54,6 +54,28 @@ _SCOPES = ["read", "write", "read write"]
 _ACCOUNTS = [f"acc-{i:04d}" for i in range(1, 11)]
 _API_KEYS = [f"key-{i}" for i in range(1, 6)]
 
+# ── Suspicious transaction profiles ──────────────────────────────────────────
+# Two dedicated accounts targeted repeatedly to accumulate velocity state fast.
+# VEL-001 fires at 5 txns/1min; with 25% of traffic from 2 accounts the
+# threshold is reached quickly even at moderate generation rates.
+_SUSPICIOUS_ACCOUNTS = ["acc-0001", "acc-0002"]
+
+# Hosting/datacenter IPs — enrichment classifies these as
+# network_class=HOSTING, the condition for ND-004 (NEW_DEVICE_FOREIGN).
+_HOSTING_IPS = [
+    "52.0.0.1",  # AWS us-east-1
+    "13.64.0.1",  # Azure westus
+    "34.64.0.1",  # GCP us-central1
+    "45.33.0.1",  # Linode (Akamai)
+    "167.99.0.1",  # DigitalOcean
+]
+
+# Patterns: one is chosen per suspicious transaction.
+# velocity_burst — same small account pool → accumulates VEL-001
+# high_amount    — amount 800-2000         → VEL-002 / ND-001
+# hosting_ip     — datacenter IP           → ND-004
+_SUSPICIOUS_PATTERNS = ["velocity_burst", "high_amount", "hosting_ip"]
+
 
 def _luhn_complete(partial: str) -> str:
     """Append a Luhn check digit to make a valid card number."""
@@ -80,7 +102,7 @@ def _make_payload() -> dict:
         "transaction_id": str(uuid.uuid4()),
         "account_id": random.choice(_ACCOUNTS),
         "merchant_id": random.choice(_MERCHANTS),
-        "amount": round(random.uniform(1.0, 5000.0), 2),
+        "amount": round(random.uniform(5.0, 300.0), 2),
         "currency": random.choice(_CURRENCIES),
         "event_time": now_ms,
         "channel": random.choice(_CHANNELS),
@@ -91,6 +113,27 @@ def _make_payload() -> dict:
         "geo_lat": None,
         "geo_lon": None,
     }
+
+
+_RED = "\033[31m"
+_RESET_COLOR = "\033[0m"
+
+
+def _make_suspicious_payload(pattern: str) -> dict:
+    """Return a transaction crafted to trigger one or more fraud rules.
+
+    velocity_burst — targets _SUSPICIOUS_ACCOUNTS to accumulate VEL-001
+    high_amount    — large single amount (800-2000) to trigger VEL-002 / ND-001
+    hosting_ip     — datacenter caller IP to trigger ND-004
+    """
+    base = _make_payload()
+    if pattern == "velocity_burst":
+        base["account_id"] = random.choice(_SUSPICIOUS_ACCOUNTS)
+    elif pattern == "high_amount":
+        base["amount"] = round(random.uniform(800.0, 2000.0), 2)
+    elif pattern == "hosting_ip":
+        base["caller_ip"] = random.choice(_HOSTING_IPS)
+    return base
 
 
 def _consume_enriched(bootstrap_servers: str, stop_event: threading.Event) -> None:
@@ -154,7 +197,18 @@ def main() -> None:
     parser.add_argument("--kafka-brokers", default="localhost:9092")
     parser.add_argument("--schema-registry", default="http://localhost:8081")
     parser.add_argument(
-        "--consume-only", action="store_true", help="Only consume txn.enriched, do not produce"
+        "--consume-only",
+        action="store_true",
+        help="Only consume txn.enriched, do not produce",
+    )
+    parser.add_argument(
+        "--suspicious-rate",
+        type=float,
+        default=0.25,
+        help=(
+            "Fraction of transactions injected as suspicious (0.0–1.0). "
+            "Default 0.25 → ~2-3 per 10 messages."
+        ),
     )
     args = parser.parse_args()
 
@@ -188,19 +242,31 @@ def main() -> None:
     service.start()
 
     unlimited = args.count == 0
-    print(f"Producing {'unlimited' if unlimited else args.count} transactions to txn.api ...")
+    count_label = "unlimited" if unlimited else args.count
+    print(f"Producing {count_label} transactions to txn.api ...")
+    if args.suspicious_rate > 0:
+        print(
+            f"  Suspicious rate: {args.suspicious_rate:.0%} "
+            f"(patterns: {', '.join(_SUSPICIOUS_PATTERNS)})"
+        )
     ok = 0
     i = 0
     try:
         while unlimited or i < args.count:
-            payload = _make_payload()
+            if random.random() < args.suspicious_rate:
+                pattern = random.choice(_SUSPICIOUS_PATTERNS)
+                payload = _make_suspicious_payload(pattern)
+                tag = f" {_RED}[{pattern}]{_RESET_COLOR}"
+            else:
+                payload = _make_payload()
+                tag = ""
             try:
                 result = service.publish(payload)
                 print(
                     f"  → produced  txn={result.transaction_id}  "
                     f"acct={payload['account_id']}  "
                     f"amount={payload['amount']} {payload['currency']}  "
-                    f"ip={payload['caller_ip']}"
+                    f"ip={payload['caller_ip']}{tag}"
                 )
                 ok += 1
             except Exception as exc:

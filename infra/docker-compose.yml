@@ -52,6 +52,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts:/etc/prometheus/rules:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -71,6 +72,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       - prometheus
     healthcheck:
@@ -80,7 +83,7 @@ services:
       retries: 5
 
   flink-jobmanager:
-    image: apache/flink:1.20.3-scala_2.12
+    image: ${FLINK_IMAGE:-apache/flink:1.20.3-scala_2.12}
     platform: linux/amd64
     container_name: flink-jobmanager
     hostname: flink-jobmanager
@@ -106,7 +109,7 @@ services:
       retries: 10
 
   flink-taskmanager:
-    image: apache/flink:1.20.3-scala_2.12
+    image: ${FLINK_IMAGE:-apache/flink:1.20.3-scala_2.12}
     platform: linux/amd64
     container_name: flink-taskmanager
     hostname: flink-taskmanager
@@ -122,6 +125,13 @@ services:
       - ./geoip:/opt/flink/geoip:ro
     depends_on:
       - flink-jobmanager
+
+  # TECH DEBT: producer-api and load-generator are built and published via CI
+  # (see .github/workflows/ci.yml build-images job) but not wired into compose
+  # for local dev because pip's source compilation of confluent-kafka/grpcio
+  # makes the build prohibitively slow on some platforms.
+  # To revisit: pin prebuilt wheels in a requirements.txt lock file, or use
+  # a pre-published GHCR image via PRODUCER_IMAGE / LOAD_GEN_IMAGE env vars.
 
   minio:
     image: minio/minio:RELEASE.2024-04-06T05-26-02Z
@@ -142,6 +152,26 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    hostname: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: fraudstream
+      POSTGRES_USER: fraudstream
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fraudstream}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/migrations/001_create_fraud_alerts.sql:/docker-entrypoint-initdb.d/001_create_fraud_alerts.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "fraudstream", "-d", "fraudstream"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   grafana-data:
   minio-data:
+  postgres-data:
