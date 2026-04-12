@@ -1,6 +1,6 @@
-# FraudStream — Simple Streaming Pipeline
+# FraudStream — Real-Time Fraud Detection at Scale
 
-A real-time transaction enrichment and fraud detection pipeline. Raw payment transactions flow through Kafka, are enriched by a stateful Apache Flink job (velocity windows, geolocation, device fingerprinting), evaluated against a configurable fraud rule set, and persisted as alerts to both Kafka and PostgreSQL — all observable via Prometheus and Grafana.
+Stop fraud before it lands. FraudStream processes payment transactions in milliseconds — enriching every event with velocity signals, geolocation, and device fingerprints, then evaluating them against a hot-configurable rule engine — all on Apache Kafka and Flink, with full Prometheus observability out of the box.
 
 ---
 
