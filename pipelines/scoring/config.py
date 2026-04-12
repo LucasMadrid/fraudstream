@@ -26,6 +26,4 @@ class ScoringConfig:
             "FRAUD_ALERTS_DB_URL", "postgresql://fraudstream:fraudstream@localhost:5432/fraudstream"
         )
     )
-    pg_pool_size: int = field(
-        default_factory=lambda: int(os.environ.get("PG_POOL_SIZE", "2"))
-    )
+    pg_pool_size: int = field(default_factory=lambda: int(os.environ.get("PG_POOL_SIZE", "2")))

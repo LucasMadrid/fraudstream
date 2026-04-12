@@ -32,9 +32,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_ALERT_SCHEMA_PATH = (
-    Path(__file__).parent.parent / "scoring" / "schemas" / "fraud-alert-v1.avsc"
-)
+_ALERT_SCHEMA_PATH = Path(__file__).parent.parent / "scoring" / "schemas" / "fraud-alert-v1.avsc"
 
 _stop_event = threading.Event()
 

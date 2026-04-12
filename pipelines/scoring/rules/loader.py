@@ -63,9 +63,7 @@ class RuleLoader:
                 rule = RuleDefinition.model_validate(item)
                 all_rules.append(rule)
             except ValidationError as exc:
-                raise RuleConfigError(
-                    f"Invalid rule config at index {i}: {exc}"
-                ) from exc
+                raise RuleConfigError(f"Invalid rule config at index {i}: {exc}") from exc
 
         # Return only enabled rules
         return [r for r in all_rules if r.enabled]

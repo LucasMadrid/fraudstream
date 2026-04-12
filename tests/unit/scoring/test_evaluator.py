@@ -129,8 +129,13 @@ class TestImpossibleTravelV1:
 
 class TestDisabledRules:
     def test_disabled_rule_not_evaluated(self):
-        disabled = _make_rule("VEL-DIS", RuleFamily.velocity, Severity.critical,
-                               {"field": "vel_count_1m", "count": 0}, enabled=False)
+        disabled = _make_rule(
+            "VEL-DIS",
+            RuleFamily.velocity,
+            Severity.critical,
+            {"field": "vel_count_1m", "count": 0},
+            enabled=False,
+        )
         txn = {"vel_count_1m": 999}
         result = RuleEvaluator([disabled]).dispatch(txn)
         assert result.determination == "clean"

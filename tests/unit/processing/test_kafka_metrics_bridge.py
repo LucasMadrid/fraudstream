@@ -174,9 +174,10 @@ class TestAlertsConsumerThread:
 
         rule_family_map = {"VEL-001": "velocity", "VEL-002": "velocity"}
 
-        with patch(
-            "pipelines.processing.kafka_metrics_bridge._stop_event", stop_event
-        ), patch("confluent_kafka.Consumer", return_value=mock_consumer):
+        with (
+            patch("pipelines.processing.kafka_metrics_bridge._stop_event", stop_event),
+            patch("confluent_kafka.Consumer", return_value=mock_consumer),
+        ):
             _alerts_consumer_thread("localhost:9092", "txn.fraud.alerts", rule_family_map)
 
         vel001 = rule_flags_total.labels(
@@ -207,9 +208,10 @@ class TestAlertsConsumerThread:
         mock_consumer = MagicMock()
         mock_consumer.poll.side_effect = fake_poll
 
-        with patch(
-            "pipelines.processing.kafka_metrics_bridge._stop_event", stop_event
-        ), patch("confluent_kafka.Consumer", return_value=mock_consumer):
+        with (
+            patch("pipelines.processing.kafka_metrics_bridge._stop_event", stop_event),
+            patch("confluent_kafka.Consumer", return_value=mock_consumer),
+        ):
             # Must not raise
             _alerts_consumer_thread("localhost:9092", "txn.fraud.alerts", {"VEL-001": "velocity"})
 
@@ -233,9 +235,10 @@ class TestAlertsConsumerThread:
         mock_consumer = MagicMock()
         mock_consumer.poll.side_effect = fake_poll
 
-        with patch(
-            "pipelines.processing.kafka_metrics_bridge._stop_event", stop_event
-        ), patch("confluent_kafka.Consumer", return_value=mock_consumer):
+        with (
+            patch("pipelines.processing.kafka_metrics_bridge._stop_event", stop_event),
+            patch("confluent_kafka.Consumer", return_value=mock_consumer),
+        ):
             _alerts_consumer_thread("localhost:9092", "txn.fraud.alerts", {"VEL-001": "velocity"})
 
         mock_consumer.close.assert_called_once()
@@ -271,9 +274,10 @@ class TestAlertsConsumerThread:
         mock_consumer = MagicMock()
         mock_consumer.poll.side_effect = fake_poll
 
-        with patch(
-            "pipelines.processing.kafka_metrics_bridge._stop_event", stop_event
-        ), patch("confluent_kafka.Consumer", return_value=mock_consumer):
+        with (
+            patch("pipelines.processing.kafka_metrics_bridge._stop_event", stop_event),
+            patch("confluent_kafka.Consumer", return_value=mock_consumer),
+        ):
             _alerts_consumer_thread("localhost:9092", "txn.fraud.alerts", {"VEL-003": "velocity"})
 
         val = rule_flags_total.labels(
@@ -307,9 +311,10 @@ class TestEnrichedConsumerThread:
 
         rule_family_map = {"VEL-001": "velocity", "ND-001": "new_device"}
 
-        with patch(
-            "pipelines.processing.kafka_metrics_bridge._stop_event", stop_event
-        ), patch("confluent_kafka.Consumer", return_value=mock_consumer):
+        with (
+            patch("pipelines.processing.kafka_metrics_bridge._stop_event", stop_event),
+            patch("confluent_kafka.Consumer", return_value=mock_consumer),
+        ):
             _enriched_consumer_thread("localhost:9092", "txn.enriched", rule_family_map)
 
         vel_val = rule_evaluations_total.labels(
@@ -348,9 +353,10 @@ class TestEnrichedConsumerThread:
         mock_consumer = MagicMock()
         mock_consumer.poll.side_effect = fake_poll
 
-        with patch(
-            "pipelines.processing.kafka_metrics_bridge._stop_event", stop_event
-        ), patch("confluent_kafka.Consumer", return_value=mock_consumer):
+        with (
+            patch("pipelines.processing.kafka_metrics_bridge._stop_event", stop_event),
+            patch("confluent_kafka.Consumer", return_value=mock_consumer),
+        ):
             _enriched_consumer_thread("localhost:9092", "txn.enriched", {"VEL-001": "velocity"})
 
         mock_consumer.close.assert_called_once()

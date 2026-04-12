@@ -63,11 +63,11 @@ _SUSPICIOUS_ACCOUNTS = ["acc-0001", "acc-0002"]
 # Hosting/datacenter IPs — enrichment classifies these as
 # network_class=HOSTING, the condition for ND-004 (NEW_DEVICE_FOREIGN).
 _HOSTING_IPS = [
-    "52.0.0.1",   # AWS us-east-1
+    "52.0.0.1",  # AWS us-east-1
     "13.64.0.1",  # Azure westus
     "34.64.0.1",  # GCP us-central1
     "45.33.0.1",  # Linode (Akamai)
-    "167.99.0.1", # DigitalOcean
+    "167.99.0.1",  # DigitalOcean
 ]
 
 # Patterns: one is chosen per suspicious transaction.

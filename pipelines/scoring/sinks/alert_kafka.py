@@ -13,12 +13,8 @@ from pipelines.scoring.types import FraudAlert
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_PATH = (
-    Path(__file__).parent.parent / "schemas" / "fraud-alert-v1.avsc"
-)
-_DLQ_SCHEMA_PATH = (
-    Path(__file__).parent.parent / "schemas" / "fraud-alert-dlq-v1.avsc"
-)
+_SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "fraud-alert-v1.avsc"
+_DLQ_SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "fraud-alert-dlq-v1.avsc"
 
 
 class AlertKafkaSink:
@@ -39,15 +35,9 @@ class AlertKafkaSink:
         import fastavro
         from confluent_kafka import Producer
 
-        self._producer = Producer(
-            {"bootstrap.servers": self._config.kafka_brokers}
-        )
-        self._parsed_schema = fastavro.parse_schema(
-            json.loads(_SCHEMA_PATH.read_text())
-        )
-        self._dlq_schema = fastavro.parse_schema(
-            json.loads(_DLQ_SCHEMA_PATH.read_text())
-        )
+        self._producer = Producer({"bootstrap.servers": self._config.kafka_brokers})
+        self._parsed_schema = fastavro.parse_schema(json.loads(_SCHEMA_PATH.read_text()))
+        self._dlq_schema = fastavro.parse_schema(json.loads(_DLQ_SCHEMA_PATH.read_text()))
         self._register_schema()
 
     def _register_schema(self) -> None:
@@ -58,30 +48,22 @@ class AlertKafkaSink:
                 SchemaRegistryClient,
             )
 
-            client = SchemaRegistryClient(
-                {"url": self._config.schema_registry_url}
-            )
+            client = SchemaRegistryClient({"url": self._config.schema_registry_url})
             schema_str = _SCHEMA_PATH.read_text()
             subject = "txn.fraud.alerts-value"
             client.register_schema(subject, Schema(schema_str, "AVRO"))
             logger.info("Registered schema subject: %s", subject)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Schema Registry registration failed (non-fatal): %s", exc
-            )
+            logger.warning("Schema Registry registration failed (non-fatal): %s", exc)
 
     def _load_schemas(self) -> None:
         """Parse Avro schemas on demand if open() was not called."""
         import fastavro
 
         if self._parsed_schema is None:
-            self._parsed_schema = fastavro.parse_schema(
-                json.loads(_SCHEMA_PATH.read_text())
-            )
+            self._parsed_schema = fastavro.parse_schema(json.loads(_SCHEMA_PATH.read_text()))
         if self._dlq_schema is None:
-            self._dlq_schema = fastavro.parse_schema(
-                json.loads(_DLQ_SCHEMA_PATH.read_text())
-            )
+            self._dlq_schema = fastavro.parse_schema(json.loads(_DLQ_SCHEMA_PATH.read_text()))
 
     def _serialise(self, alert: FraudAlert) -> bytes:
         """Serialise FraudAlert to Avro bytes."""
@@ -99,9 +81,7 @@ class AlertKafkaSink:
         fastavro.writer(buf, self._parsed_schema, [record])
         return buf.getvalue()
 
-    def _serialise_dlq(
-        self, alert: FraudAlert, error_type: str, error_message: str
-    ) -> bytes:
+    def _serialise_dlq(self, alert: FraudAlert, error_type: str, error_message: str) -> bytes:
         """Serialise a failed alert to DLQ Avro bytes."""
         import fastavro
 

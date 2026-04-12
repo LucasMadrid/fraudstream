@@ -53,8 +53,7 @@ def _evaluate_nd002(txn: dict, conditions: dict) -> bool:
     if device_count_24h is None or vel_count_1m is None:
         return False
     return (
-        device_count_24h >= conditions["device_count"]
-        and vel_count_1m >= conditions["vel_count"]
+        device_count_24h >= conditions["device_count"] and vel_count_1m >= conditions["vel_count"]
     )
 
 

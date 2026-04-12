@@ -103,9 +103,7 @@ class TestNewDeviceRules:
 
     def test_nd_002_triggers_on_rapid_new_device(self, evaluator):
         # ND-002: device_is_new=True, device_count_24h >= 3, vel_count_1m >= 5
-        txn = _clean_txn(
-            device_is_new=True, device_count_24h=4, vel_count_1m=6
-        )
+        txn = _clean_txn(device_is_new=True, device_count_24h=4, vel_count_1m=6)
         result = evaluator.dispatch(txn)
         assert "ND-002" in result.matched_rules
 

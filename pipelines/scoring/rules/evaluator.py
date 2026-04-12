@@ -52,14 +52,10 @@ class RuleEvaluator:
             if evaluate_fn(txn, rule.conditions):
                 matched_rules.append(rule.rule_id)
                 triggered_severities.append(rule.severity)
-                record_flag(
-                    rule.rule_id, rule.family.value, rule.severity.name
-                )
+                record_flag(rule.rule_id, rule.family.value, rule.severity.name)
 
         determination = "suspicious" if matched_rules else "clean"
-        highest_severity = (
-            max(triggered_severities).name if triggered_severities else None
-        )
+        highest_severity = max(triggered_severities).name if triggered_severities else None
         evaluation_timestamp = int(time.time() * 1000)
 
         if matched_rules:
@@ -100,7 +96,5 @@ class RuleEvaluatorProcessFunction:
         self._evaluator = RuleEvaluator(rules)
 
     def process_element(self, txn: dict, ctx: object = None) -> EvaluationResult:  # noqa: ARG002
-        assert self._evaluator is not None, (
-            "open() must be called before process_element()"
-        )
+        assert self._evaluator is not None, "open() must be called before process_element()"
         return self._evaluator.dispatch(txn)
