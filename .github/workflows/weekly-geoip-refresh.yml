@@ -12,24 +12,33 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      # Hoisted so it can be checked in `if:` expressions (step-level env is not available there)
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Validate MAXMIND_LICENCE_KEY secret
-        # Ensure the secret is configured before attempting download
+        # Skip gracefully when secret is not configured (e.g. forks, dev environments).
+        # Downstream steps gate on the `configured` output — job shows success, not failure.
+        id: check-secret
         run: |
           if [ -z "${{ secrets.MAXMIND_LICENCE_KEY }}" ]; then
-            echo "ERROR: MAXMIND_LICENCE_KEY secret is not configured"
-            exit 1
+            echo "WARNING: MAXMIND_LICENCE_KEY secret is not configured — skipping refresh"
+            echo "configured=false" >> $GITHUB_OUTPUT
+          else
+            echo "Secret is configured (length: ${#MAXMIND_LICENCE_KEY})"
+            echo "configured=true" >> $GITHUB_OUTPUT
           fi
-          echo "Secret is configured (length: ${#MAXMIND_LICENCE_KEY})"
         env:
           MAXMIND_LICENCE_KEY: ${{ secrets.MAXMIND_LICENCE_KEY }}
 
       - name: Create geoip directory
+        if: steps.check-secret.outputs.configured == 'true'
         run: mkdir -p infra/geoip
 
       - name: Download GeoLite2-City database
+        if: steps.check-secret.outputs.configured == 'true'
         env:
           MAXMIND_LICENCE_KEY: ${{ secrets.MAXMIND_LICENCE_KEY }}
         run: |
@@ -59,6 +68,7 @@ jobs:
           echo "File downloaded successfully (size: $file_size bytes)"
 
       - name: Validate and extract database
+        if: steps.check-secret.outputs.configured == 'true'
         run: |
           set -e
 
@@ -108,6 +118,7 @@ jobs:
           rm -rf /tmp/geolite2-extracted /tmp/geolite2-city.tar.gz
 
       - name: Check for changes
+        if: steps.check-secret.outputs.configured == 'true'
         id: check-changes
         run: |
           if git diff --quiet infra/geoip/GeoLite2-City.mmdb; then
@@ -148,12 +159,10 @@ jobs:
           echo "Current version is up-to-date."
 
       - name: Send Slack notification on failure
-        if: failure()
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ job.status }}
           text: 'GeoIP database refresh workflow failed'
           fields: repo,message,commit,author
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         continue-on-error: true
