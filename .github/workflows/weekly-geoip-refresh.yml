@@ -129,12 +129,7 @@ jobs:
 
           # Create commit with date stamp
           COMMIT_DATE=$(date -u +'%Y-%m-%d')
-          git commit -m "chore: update GeoLite2-City.mmdb database ($COMMIT_DATE)
-
-MaxMind GeoLite2-City database automatically updated via scheduled CI job.
-Downloaded at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-
-Auto-committed by GitHub Actions."
+          git commit -m "chore(geoip): update GeoLite2-City.mmdb ($COMMIT_DATE)"
 
           # Push to main branch
           git push origin HEAD:main
@@ -158,6 +153,7 @@ Auto-committed by GitHub Actions."
         with:
           status: ${{ job.status }}
           text: 'GeoIP database refresh workflow failed'
-          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           fields: repo,message,commit,author
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         continue-on-error: true
