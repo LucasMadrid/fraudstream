@@ -33,3 +33,32 @@ groups:
             15 consecutive minutes. This may indicate a silent evaluator failure, an
             empty rule set, or absence of traffic. Verify the Flink job is running,
             rules.yaml is loaded, and enriched transactions are flowing on txn.enriched.
+
+      - alert: MLCircuitBreakerOpen
+        expr: ml_circuit_breaker_state{state="open"} == 1
+        for: 0m
+        labels:
+          severity: critical
+          team: fraud-platform
+        annotations:
+          summary: "ML circuit breaker is OPEN — scoring engine in fallback mode"
+          description: >
+            The ML scoring circuit breaker has opened after repeated failures.
+            Scoring engine is operating in rule-engine-only fallback mode.
+            Investigate ML serving health and check ml_fallback_decisions_total counter.
+          runbook_url: "docs/runbooks/OBSERVABILITY_RUNBOOK.md"
+
+      - alert: RuleFPRateHigh
+        expr: >
+          rate(rule_shadow_triggers_total{mode="active"}[1h])
+          / rate(rule_triggers_total[1h]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: fraud-platform
+        annotations:
+          summary: "Rule {{ $labels.rule_id }} false-positive rate exceeds 5%"
+          description: >
+            Rule {{ $labels.rule_id }} has a false-positive rate above 5% over the
+            last hour. Alertmanager will fire the auto-demotion webhook to shadow mode.
+          runbook_url: "docs/runbooks/OBSERVABILITY_RUNBOOK.md"

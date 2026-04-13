@@ -16,6 +16,13 @@ class RuleFamily(StrEnum):
     new_device = "new_device"
 
 
+class RuleMode(StrEnum):
+    """Rule execution mode."""
+
+    active = "active"
+    shadow = "shadow"
+
+
 class Severity(IntEnum):
     """Rule severity levels with natural ordering support."""
 
@@ -119,6 +126,7 @@ class RuleDefinition(BaseModel):
     conditions: dict[str, Any]
     severity: Severity
     enabled: bool
+    mode: RuleMode = RuleMode.active
 
     model_config = ConfigDict(extra="forbid")
 
