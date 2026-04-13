@@ -8,9 +8,7 @@ Allows fraud analysts to:
 """
 
 import datetime
-import json
 import logging
-from typing import Optional
 
 import pandas as pd
 import requests
@@ -166,7 +164,7 @@ def promote_rule(rule_id: str) -> tuple[bool, str]:
         return False, f"Connection error: {str(e)}"
 
 
-def get_circuit_breaker_state() -> Optional[dict]:
+def get_circuit_breaker_state() -> dict | None:
     """
     Query the management API for current circuit breaker state.
 
@@ -390,7 +388,9 @@ with col1:
             st.warning(
                 f"Circuit breaker is OPEN. "
                 f"Failure count: {cb_state.get('failure_count', 0)} | "
-                f"Next probe: {datetime.datetime.fromtimestamp(cb_state.get('next_probe_at', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                f"Next probe: {datetime.datetime.fromtimestamp(
+                    cb_state.get('next_probe_at', 0) / 1000
+                ).strftime('%Y-%m-%d %H:%M:%S')} UTC"
             )
         else:
             st.success("Circuit breaker healthy — ML scoring available.")

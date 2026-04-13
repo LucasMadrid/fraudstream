@@ -14,6 +14,7 @@ import time
 from decimal import Decimal
 
 from pipelines.processing.logging_config import set_transaction_id
+from pipelines.processing.metrics import corrected_record_latency_ms, late_events_within_window_total
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +109,6 @@ try:  # pragma: no cover
                 current_watermark != _NO_WATERMARK
                 and event_time_ms < current_watermark
             ):
-                from pipelines.processing.metrics import (
-                    late_events_within_window_total,
-                    corrected_record_latency_ms,
-                )
                 late_events_within_window_total.labels(stage="velocity").inc()
                 corrected_record_latency_ms.labels(stage="velocity").observe(
                     (current_watermark - event_time_ms) / 1000.0

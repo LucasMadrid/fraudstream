@@ -6,14 +6,12 @@ to matched_rules but do NOT change the EvaluationResult.determination.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from pipelines.scoring.rules.evaluator import RuleEvaluator
 from pipelines.scoring.rules.models import RuleDefinition, RuleFamily, RuleMode, Severity
-from pipelines.scoring.types import EvaluationResult
-
 
 def _make_rule(
     rule_id: str,
@@ -147,7 +145,9 @@ class TestActiveModeUnchanged:
 
         matched_rules = result.matched_rules
         for rule in matched_rules:
-            assert not rule.endswith(":shadow"), f"Active rule should not have :shadow suffix: {rule}"
+            assert not rule.endswith(":shadow"), (
+                f"Active rule should not have :shadow suffix: {rule}"
+            )
 
 
 class TestMixedShadowAndActive:
