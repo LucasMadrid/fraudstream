@@ -385,12 +385,13 @@ with col1:
         )
 
         if cb_state.get("state") == "open":
+            next_probe_str = datetime.datetime.fromtimestamp(
+                cb_state.get("next_probe_at", 0) / 1000
+            ).strftime("%Y-%m-%d %H:%M:%S")
             st.warning(
                 f"Circuit breaker is OPEN. "
                 f"Failure count: {cb_state.get('failure_count', 0)} | "
-                f"Next probe: {datetime.datetime.fromtimestamp(
-                    cb_state.get('next_probe_at', 0) / 1000
-                ).strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                f"Next probe: {next_probe_str} UTC"
             )
         else:
             st.success("Circuit breaker healthy — ML scoring available.")

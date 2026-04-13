@@ -14,7 +14,10 @@ import time
 from decimal import Decimal
 
 from pipelines.processing.logging_config import set_transaction_id
-from pipelines.processing.metrics import corrected_record_latency_ms, late_events_within_window_total
+from pipelines.processing.metrics import (
+    corrected_record_latency_ms,
+    late_events_within_window_total,
+)
 
 logger = logging.getLogger(__name__)
 

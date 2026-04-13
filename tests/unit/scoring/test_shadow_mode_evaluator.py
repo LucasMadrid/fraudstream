@@ -13,6 +13,7 @@ import pytest
 from pipelines.scoring.rules.evaluator import RuleEvaluator
 from pipelines.scoring.rules.models import RuleDefinition, RuleFamily, RuleMode, Severity
 
+
 def _make_rule(
     rule_id: str,
     family: RuleFamily,
