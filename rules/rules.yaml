@@ -7,6 +7,7 @@
   family: "velocity"
   severity: "high"
   enabled: true
+  mode: "shadow"
   conditions:
     field: "vel_count_1m"
     count: 5
@@ -16,6 +17,7 @@
   family: "velocity"
   severity: "high"
   enabled: true
+  mode: "active"
   conditions:
     field: "vel_amount_5m"
     amount: 2000.00
@@ -25,6 +27,7 @@
   family: "velocity"
   severity: "medium"
   enabled: true
+  mode: "active"
   conditions:
     field: "vel_count_5m"
     count: 10
@@ -34,18 +37,17 @@
   family: "velocity"
   severity: "medium"
   enabled: true
+  mode: "active"
   conditions:
     field: "vel_amount_24h"
     amount: 10000.00
 
-# CROSS-FEATURE DEPENDENCY: IT-001 and IT-002 require prev_geo_country + prev_txn_time_ms
-# from feature 002 DeviceProfileState. These fields are absent from enriched-txn-v1.avsc.
-# Rules load and metrics count, but evaluate to not-met until feature 002 ships these fields.
 - rule_id: "IT-001"
   name: "IMPOSSIBLE_TRAVEL"
   family: "impossible_travel"
   severity: "critical"
   enabled: true
+  mode: "active"
   conditions:
     window_ms: 3600000
 
@@ -54,6 +56,7 @@
   family: "impossible_travel"
   severity: "high"
   enabled: true
+  mode: "active"
   conditions:
     count: 3
 
@@ -62,6 +65,7 @@
   family: "new_device"
   severity: "high"
   enabled: true
+  mode: "active"
   conditions:
     amount: 500.00
 
@@ -70,16 +74,17 @@
   family: "new_device"
   severity: "medium"
   enabled: true
+  mode: "active"
   conditions:
     device_count: 3
     vel_count: 5
 
-# ND-003: device_known_fraud is always null in enriched-txn-v1.avsc (NOT YET WIRED IN V1)
 - rule_id: "ND-003"
   name: "KNOWN_FRAUD_DEVICE"
   family: "new_device"
   severity: "critical"
   enabled: true
+  mode: "active"
   conditions: {}
 
 - rule_id: "ND-004"
@@ -87,5 +92,6 @@
   family: "new_device"
   severity: "high"
   enabled: true
+  mode: "active"
   conditions:
     network_class: "HOSTING"
