@@ -14,6 +14,10 @@ import time
 from decimal import Decimal
 
 from pipelines.processing.logging_config import set_transaction_id
+from pipelines.processing.metrics import (
+    corrected_record_latency_ms,
+    late_events_within_window_total,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +86,9 @@ try:  # pragma: no cover
                 )
 
                 dlq_events_total.labels(error_type="LATE_EVENT_BEYOND_ALLOWED_LATENESS").inc()
+                from pipelines.processing.metrics import late_events_beyond_window_total
+
+                late_events_beyond_window_total.labels(stage="velocity", topic="txn.api").inc()
                 dlq_record = build_dlq_record(
                     source_topic="txn.api",
                     source_partition=0,
@@ -100,6 +107,13 @@ try:  # pragma: no cover
                 )
                 ctx.output(LATE_DLQ_TAG, dlq_record)
                 return
+
+            # Within-window late event: arrived after watermark but within allowed lateness
+            if current_watermark != _NO_WATERMARK and event_time_ms < current_watermark:
+                late_events_within_window_total.labels(stage="velocity").inc()
+                corrected_record_latency_ms.labels(stage="velocity").observe(
+                    (current_watermark - event_time_ms) / 1000.0
+                )
 
             bucket_key: int = event_time_ms // 60_000
             amount = Decimal(str(txn.amount)) if not isinstance(txn.amount, Decimal) else txn.amount

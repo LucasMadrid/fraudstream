@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import IntEnum, StrEnum
 from typing import Any
 
@@ -14,6 +15,13 @@ class RuleFamily(StrEnum):
     velocity = "velocity"
     impossible_travel = "impossible_travel"
     new_device = "new_device"
+
+
+class RuleMode(StrEnum):
+    """Rule execution mode."""
+
+    active = "active"
+    shadow = "shadow"
 
 
 class Severity(IntEnum):
@@ -115,10 +123,26 @@ class RuleDefinition(BaseModel):
 
     rule_id: str
     name: str
+
+    @field_validator("rule_id", mode="before")
+    @classmethod
+    def validate_rule_id(cls, v: object) -> str:
+        """Enforce safe rule ID format to prevent path traversal in webhook URLs."""
+        if not isinstance(v, str):
+            raise ValueError("rule_id must be a string")
+        pattern = r"^[a-zA-Z0-9][a-zA-Z0-9\-_]{0,62}[a-zA-Z0-9]$"
+        if not re.match(pattern, v):
+            raise ValueError(
+                "rule_id must be 2–64 chars, alphanumeric/hyphens/underscores, "
+                "start and end with alphanumeric"
+            )
+        return v
+
     family: RuleFamily
     conditions: dict[str, Any]
     severity: Severity
     enabled: bool
+    mode: RuleMode = RuleMode.active
 
     model_config = ConfigDict(extra="forbid")
 

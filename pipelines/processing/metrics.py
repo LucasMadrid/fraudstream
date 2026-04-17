@@ -45,3 +45,23 @@ last_watermark_advance_epoch = Gauge(
     "last_watermark_advance_epoch",
     "Unix epoch seconds of the most recent watermark advancement across all partitions",
 )
+
+# Late event metrics — distinguishes within-window vs beyond-window arrivals (FR-013)
+late_events_within_window_total = Counter(
+    "late_events_within_window_total",
+    "Events that arrived late but within the allowed lateness window",
+    labelnames=["stage"],
+)
+
+late_events_beyond_window_total = Counter(
+    "late_events_beyond_window_total",
+    "Events that arrived beyond the allowed lateness window, routed to DLQ",
+    labelnames=["stage", "topic"],
+)
+
+corrected_record_latency_ms = Histogram(
+    "corrected_record_latency_ms",
+    "Latency of late-arriving events that were still accepted and corrected (ms)",
+    buckets=[1, 5, 10, 25, 50, 100, 250, 500],
+    labelnames=["stage"],
+)

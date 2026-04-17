@@ -45,6 +45,9 @@ scoring = [
     "fastavro>=1.9",
     "prometheus-client>=0.20",
     "opentelemetry-sdk>=1.24",
+    "fastapi>=0.104",
+    "uvicorn>=0.24",
+    "pybreaker>=0.7",
 ]
 
 [tool.setuptools.packages.find]

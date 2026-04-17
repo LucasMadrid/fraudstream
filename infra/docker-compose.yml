@@ -20,6 +20,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    networks: [fraudstream]
     healthcheck:
       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 10s
@@ -39,6 +40,7 @@ services:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: broker:29092
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks: [fraudstream]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
       interval: 10s
@@ -56,6 +58,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+    networks: [fraudstream]
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s
@@ -76,6 +79,7 @@ services:
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       - prometheus
+    networks: [fraudstream]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 10s
@@ -102,6 +106,7 @@ services:
     depends_on:
       broker:
         condition: service_healthy
+    networks: [fraudstream]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
       interval: 10s
@@ -125,6 +130,7 @@ services:
       - ./geoip:/opt/flink/geoip:ro
     depends_on:
       - flink-jobmanager
+    networks: [fraudstream]
 
   # TECH DEBT: producer-api and load-generator are built and published via CI
   # (see .github/workflows/ci.yml build-images job) but not wired into compose
@@ -146,6 +152,7 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio-data:/data
+    networks: [fraudstream]
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -165,13 +172,68 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/migrations/001_create_fraud_alerts.sql:/docker-entrypoint-initdb.d/001_create_fraud_alerts.sql:ro
+    networks: [fraudstream]
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "fraudstream", "-d", "fraudstream"]
       interval: 10s
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: fraudstream-redis
+    command: redis-server --save 60 1 --appendonly no
+    ports:
+      - "6379:6379"
+    volumes:
+      - fraudstream_redis_data:/data
+    networks: [fraudstream]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  scoring-management:
+    image: python:3.11-slim
+    container_name: fraudstream-scoring-management
+    command: >
+      sh -c "pip install fastapi uvicorn pydantic pybreaker prometheus-client pyyaml redis --quiet &&
+             uvicorn pipelines.scoring.management_api:app --host 0.0.0.0 --port 8090"
+    volumes:
+      - ../:/app
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+      - KAFKA_BOOTSTRAP_SERVERS=broker:29092
+      - SCHEMA_REGISTRY_URL=http://schema-registry:8081
+      - REDIS_URL=redis://redis:6379/0
+      - RULES_YAML_PATH=/app/rules/rules.yaml
+    networks: [fraudstream]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: fraudstream-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager:/etc/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/config.yml"
+      - "--storage.path=/alertmanager"
+    networks: [fraudstream]
+    depends_on:
+      - prometheus
+
 volumes:
   grafana-data:
   minio-data:
   postgres-data:
+  fraudstream_redis_data:
+
+networks:
+  fraudstream:
+    driver: bridge

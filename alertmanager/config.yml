@@ -1,0 +1,26 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'default-receiver'
+  group_by: ['alertname', 'rule_id']
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - match:
+        alertname: RuleFPRateHigh
+      receiver: scoring-engine-webhook
+      continue: false
+
+receivers:
+  - name: 'default-receiver'
+
+  - name: 'scoring-engine-webhook'
+    webhook_configs:
+      - url: 'http://scoring-management:8090/rules/{{ .GroupLabels.rule_id }}/demote'
+        send_resolved: false
+        http_config:
+          follow_redirects: true
+
+inhibit_rules: []

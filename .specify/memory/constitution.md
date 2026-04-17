@@ -46,6 +46,7 @@ Raw events are never mutated or deleted after they reach the event store.
 - All enrichment and decisions are stored in separate derived tables, joined by `transaction_id`  
 - The event store is the source of truth for model retraining, audit, and dispute resolution  
 - Retention policy: raw events retained for 7 years (regulatory minimum); hot store (Redis) TTL is 24 hours
+- **Operational review store (narrow exception)**: A PostgreSQL `fraud_alerts` table is permitted as a secondary operational store for alert review status (`pending` / `confirmed-fraud` / `false-positive`) and reviewer workflow. This is NOT the event store — it holds mutable review state only, not raw events. It MUST NOT be used as a substitute for Iceberg for any analytics or training query. Schema: `transaction_id` (PK), `account_id`, `matched_rule_names` (array), `severity`, `evaluation_timestamp`, `status`, `reviewed_by` (nullable), `reviewed_at` (nullable).
 
 ### VII. PII Minimization at the Edge
 Sensitive fields are masked at the Kafka producer, before the event enters any pipeline component.  
@@ -134,6 +135,7 @@ A dedicated, independent consumer component owns all reporting and interactive a
   "fraud_score":    "float [0.0–1.0]",
   "decision":       "enum[ALLOW, FLAG, BLOCK]",
   "rule_triggers":  ["string"],
+  "severity":       "enum[low, medium, high, critical] (highest severity among matched rules; null if no rules matched)",
   "model_version":  "string",
   "latency_ms":     "int"
 }
@@ -164,10 +166,12 @@ A dedicated, independent consumer component owns all reporting and interactive a
   "geo_city":          "string",
   "geo_network_class": "enum[RESIDENTIAL, BUSINESS, HOSTING, MOBILE, UNKNOWN]",
   "geo_confidence":    "float [0.0–1.0]",
-  "device_first_seen": "epoch_ms",
-  "device_txn_count":  "int",
-  "device_known_fraud":"bool",
-  "schema_version":    "string"
+  "device_first_seen":  "epoch_ms",
+  "device_txn_count":   "int",
+  "device_known_fraud": "bool",
+  "prev_geo_country":   "string (nullable — null on first transaction per device)",
+  "prev_txn_time_ms":   "epoch_ms (nullable — null on first transaction per device)",
+  "schema_version":     "string"
 }
 ```
 Partitioned by `event_timestamp` (daily). `transaction_id` is the deduplication key.
@@ -186,6 +190,22 @@ Partitioned by `event_timestamp` (daily). `transaction_id` is the deduplication 
 }
 ```
 Partitioned by `decision_time` (daily). `transaction_id` is the deduplication key.
+
+---
+
+### Kafka Topic Inventory
+
+| Topic | Producer | Consumer(s) | Purpose |
+|---|---|---|---|
+| `txn.pos` | POS ingestion producer | Flink enrichment job | Raw POS transaction events |
+| `txn.web` | Web ingestion producer | Flink enrichment job | Raw web transaction events |
+| `txn.mobile` | Mobile ingestion producer | Flink enrichment job | Raw mobile transaction events |
+| `txn.api` | API ingestion producer | Flink enrichment job | Raw API transaction events |
+| `txn.*.dlq` | Ingestion producers | On-call / DLQ inspector | Dead-letter events per channel |
+| `txn.enriched` | Flink enrichment job | Rule evaluator, scoring engine, analytics consumer | Enriched transactions with velocity, geo, device features |
+| `txn.fraud.alerts` | Rule evaluator (Flink) | Operations queue, case management, analytics consumer | Structured fraud alert per flagged transaction |
+| `txn.decisions` | Scoring engine | Analytics consumer (`analytics.dashboard`) | Final ALLOW/FLAG/BLOCK decisions with fraud score |
+| `txn.rules.config` | Rule config UI (Streamlit v2) | Rule evaluator (Flink) | Rule definition updates — compacted topic, one record per rule ID |
 
 ---
 
@@ -210,7 +230,8 @@ Partitioned by `decision_time` (daily). `transaction_id` is the deduplication ke
 | Hot store | Redis (Docker) |
 | Event store | MinIO + Apache Iceberg |
 | Feature store | Feast (local SQLite backend) |
-| Analytics query engine | Trino (Docker) — queries Iceberg tables on MinIO |
+| Analytics query engine | Trino (Docker) — data team bulk queries and >7-day scans over Iceberg on MinIO |
+| In-process analytics | DuckDB (`duckdb-iceberg` extension) — Streamlit session queries, interactive drilldown, <7-day scans |
 | Analytics UI | Streamlit (Docker) — live dashboard + historical reports |
 | BI (optional) | Apache Superset (Docker) — self-serve SQL dashboards |
 | ML serving | MLflow local server / ONNX Runtime |
@@ -317,4 +338,4 @@ All pull requests must include a checklist item confirming compliance with the r
 
 ---
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-03
+**Version**: 1.3.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-03
