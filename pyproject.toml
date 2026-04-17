@@ -48,6 +48,7 @@ scoring = [
     "fastapi>=0.104",
     "uvicorn>=0.24",
     "pybreaker>=0.7",
+    "slowapi>=0.1.9",
 ]
 
 [tool.setuptools.packages.find]

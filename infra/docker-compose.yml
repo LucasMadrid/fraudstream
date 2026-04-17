@@ -198,7 +198,7 @@ services:
     image: python:3.11-slim
     container_name: fraudstream-scoring-management
     command: >
-      sh -c "pip install fastapi uvicorn pydantic pybreaker prometheus-client pyyaml redis --quiet &&
+      sh -c "pip install fastapi uvicorn pydantic pybreaker prometheus-client pyyaml redis slowapi --quiet &&
              uvicorn pipelines.scoring.management_api:app --host 0.0.0.0 --port 8090"
     volumes:
       - ../:/app
@@ -209,6 +209,8 @@ services:
       - SCHEMA_REGISTRY_URL=http://schema-registry:8081
       - REDIS_URL=redis://redis:6379/0
       - RULES_YAML_PATH=/app/rules/rules.yaml
+      - MANAGEMENT_API_KEY=${MANAGEMENT_API_KEY:-}
+      - FRAUD_ALERTS_DB_URL=${FRAUD_ALERTS_DB_URL:-postgresql://fraudstream:fraudstream@postgres:5432/fraudstream}
     networks: [fraudstream]
     depends_on:
       redis:

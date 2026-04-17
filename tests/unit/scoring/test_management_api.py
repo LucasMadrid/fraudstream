@@ -180,3 +180,96 @@ class TestLoadRulesFromYaml:
         p.write_text("key: value")
         with pytest.raises(ValueError, match="must be a YAML list"):
             api_module._load_rules_from_yaml(str(p))
+
+
+# ---------------------------------------------------------------------------
+# Security: API key authentication
+# ---------------------------------------------------------------------------
+
+
+class TestApiKeyAuth:
+    def test_missing_key_returns_401_when_env_set(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.status_code == 401
+
+    def test_wrong_key_returns_401(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.post("/rules/VEL-001/demote", headers={"X-Api-Key": "wrong"})
+        assert resp.status_code == 401
+
+    def test_correct_key_is_accepted(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.post("/rules/VEL-001/demote", headers={"X-Api-Key": "secret-token"})
+        assert resp.status_code == 200
+
+    def test_no_env_key_allows_unauthenticated(self, client, monkeypatch):
+        monkeypatch.delenv("MANAGEMENT_API_KEY", raising=False)
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.status_code == 200
+
+    def test_cb_endpoint_requires_key_when_set(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.get("/circuit-breaker/state")
+        assert resp.status_code == 401
+
+    def test_healthz_never_requires_key(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.get("/healthz")
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Security: rule_id pattern validation
+# ---------------------------------------------------------------------------
+
+
+class TestRuleIdPatternValidation:
+    def test_valid_rule_id_accepted(self, client):
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.status_code == 200
+
+    def test_rule_id_with_special_chars_returns_422(self, client):
+        resp = client.post("/rules/bad!rule/demote")
+        assert resp.status_code == 422
+
+    def test_rule_id_starting_with_hyphen_returns_422(self, client):
+        resp = client.post("/rules/-bad/demote")
+        assert resp.status_code == 422
+
+    def test_rule_id_with_spaces_returns_422(self, client):
+        resp = client.post("/rules/bad rule/demote")
+        assert resp.status_code == 422
+
+    def test_single_char_rule_id_returns_422(self, client):
+        resp = client.post("/rules/a/demote")
+        assert resp.status_code == 422
+
+    def test_65_char_rule_id_returns_422(self, client):
+        rule_id = "a" * 65
+        resp = client.post(f"/rules/{rule_id}/demote")
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Security: response headers
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityHeaders:
+    def test_healthz_has_x_content_type_options(self, client):
+        resp = client.get("/healthz")
+        assert resp.headers.get("x-content-type-options") == "nosniff"
+
+    def test_healthz_has_x_frame_options(self, client):
+        resp = client.get("/healthz")
+        assert resp.headers.get("x-frame-options") == "DENY"
+
+    def test_healthz_has_csp(self, client):
+        resp = client.get("/healthz")
+        assert resp.headers.get("content-security-policy") == "default-src 'none'"
+
+    def test_demote_response_has_security_headers(self, client):
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.headers.get("x-content-type-options") == "nosniff"
+        assert resp.headers.get("x-frame-options") == "DENY"

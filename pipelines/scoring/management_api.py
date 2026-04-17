@@ -7,18 +7,35 @@ Provides endpoints to:
 
 v1 is file-based only (no Kafka); all mode changes write to YAML on disk and maintain
 in-memory state.
+
+Security:
+- API key auth via X-Api-Key header (enforced when MANAGEMENT_API_KEY env var is set)
+- Rate limiting: 10 req/min on mutating endpoints, 30 req/min on read endpoints
+- CORS origins configurable via MANAGEMENT_CORS_ORIGINS (comma-separated, default: none)
+- Security headers on every response (X-Content-Type-Options, X-Frame-Options, HSTS, CSP)
+- Threading lock guards demote/promote read-modify-write cycle
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Annotated
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Path, Request, Security
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from pipelines.scoring.circuit_breaker import MLCircuitBreaker
 from pipelines.scoring.config import ScoringConfig
@@ -30,12 +47,28 @@ logger = logging.getLogger(__name__)
 _rules_dict: dict[str, RuleDefinition] = {}
 _circuit_breaker: MLCircuitBreaker | None = None
 _config: ScoringConfig | None = None
+_rules_lock = threading.Lock()
+
+# Rate limiter (in-memory; swap key_func for per-user limiting if auth is bearer-based)
+_limiter = Limiter(key_func=get_remote_address)
+
+# API key auth — if MANAGEMENT_API_KEY is not set the check is skipped (dev/test mode)
+_API_KEY_HEADER = APIKeyHeader(name="X-Api-Key", auto_error=False)
+
+_RULE_ID_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9\-_]{0,62}[a-zA-Z0-9]$"
 
 
 def set_circuit_breaker(cb: MLCircuitBreaker | None) -> None:
     """Set the circuit breaker reference (called by scoring engine at startup)."""
     global _circuit_breaker
     _circuit_breaker = cb
+
+
+async def _require_api_key(api_key: str | None = Security(_API_KEY_HEADER)) -> None:
+    """Enforce X-Api-Key header when MANAGEMENT_API_KEY env var is configured."""
+    expected = os.environ.get("MANAGEMENT_API_KEY")
+    if expected and api_key != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # Response models
@@ -63,6 +96,21 @@ class HealthzResponse(BaseModel):
     """Health check response."""
 
     status: str
+
+
+# Middleware
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach security headers to every response."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'none'"
+        return response
 
 
 # Startup/shutdown
@@ -110,7 +158,7 @@ def _extract_trace_id() -> str:
         span = trace.get_current_span()
         if span and span.is_recording():
             return span.get_span_context().trace_id.hex() if span.get_span_context() else "none"
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError):
         pass
     return "none"
 
@@ -151,39 +199,64 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Register rate limiter and its 429 exception handler
+app.state.limiter = _limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS — origins must be explicitly configured; disabled by default
+_cors_origins_raw = os.environ.get("MANAGEMENT_CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["POST", "GET"],
+        allow_credentials=False,
+    )
+
+app.add_middleware(_SecurityHeadersMiddleware)
+
 
 # Endpoints
 
 
-@app.post("/rules/{rule_id}/demote")
-async def demote_rule(rule_id: str) -> DemotePromoteResponse:
+@app.post("/rules/{rule_id}/demote", dependencies=[Depends(_require_api_key)])
+@_limiter.limit("10/minute")
+async def demote_rule(
+    request: Request,
+    rule_id: Annotated[str, Path(pattern=_RULE_ID_PATTERN)],
+) -> DemotePromoteResponse:
     """Demote a rule from active to shadow mode.
 
     Args:
-        rule_id: The rule ID to demote.
+        rule_id: The rule ID to demote (2-64 alphanumeric/hyphens/underscores).
 
     Returns:
         DemotePromoteResponse with previous_mode and new_mode.
 
     Raises:
+        401: If API key is required and missing/wrong.
         404: If rule not found.
         409: If rule is already in shadow mode.
+        422: If rule_id does not match the allowed pattern.
         500: If YAML write fails.
     """
-    if rule_id not in _rules_dict:
-        raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
+    with _rules_lock:
+        if rule_id not in _rules_dict:
+            raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
 
-    rule = _rules_dict[rule_id]
-    if rule.mode == RuleMode.shadow:
-        raise HTTPException(status_code=409, detail=f"Rule {rule_id} is already in shadow mode")
+        rule = _rules_dict[rule_id]
+        if rule.mode == RuleMode.shadow:
+            raise HTTPException(status_code=409, detail=f"Rule {rule_id} is already in shadow mode")
 
-    previous_mode = rule.mode.value
-    rule.mode = RuleMode.shadow
+        previous_mode = rule.mode.value
+        rule.mode = RuleMode.shadow
 
-    try:
-        _write_rules_to_yaml(_config.rules_yaml_path)
-    except OSError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to write rules: {e}") from e
+        try:
+            _write_rules_to_yaml(_config.rules_yaml_path)
+        except OSError:
+            rule.mode = RuleMode[previous_mode]  # rollback in-memory state
+            raise HTTPException(status_code=500, detail="Internal server error") from None
 
     _emit_structured_log(
         event="rule_mode_change",
@@ -201,35 +274,43 @@ async def demote_rule(rule_id: str) -> DemotePromoteResponse:
     )
 
 
-@app.post("/rules/{rule_id}/promote")
-async def promote_rule(rule_id: str) -> DemotePromoteResponse:
+@app.post("/rules/{rule_id}/promote", dependencies=[Depends(_require_api_key)])
+@_limiter.limit("10/minute")
+async def promote_rule(
+    request: Request,
+    rule_id: Annotated[str, Path(pattern=_RULE_ID_PATTERN)],
+) -> DemotePromoteResponse:
     """Promote a rule from shadow to active mode.
 
     Args:
-        rule_id: The rule ID to promote.
+        rule_id: The rule ID to promote (2-64 alphanumeric/hyphens/underscores).
 
     Returns:
         DemotePromoteResponse with previous_mode and new_mode.
 
     Raises:
+        401: If API key is required and missing/wrong.
         404: If rule not found.
         409: If rule is already in active mode.
+        422: If rule_id does not match the allowed pattern.
         500: If YAML write fails.
     """
-    if rule_id not in _rules_dict:
-        raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
+    with _rules_lock:
+        if rule_id not in _rules_dict:
+            raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
 
-    rule = _rules_dict[rule_id]
-    if rule.mode == RuleMode.active:
-        raise HTTPException(status_code=409, detail=f"Rule {rule_id} is already in active mode")
+        rule = _rules_dict[rule_id]
+        if rule.mode == RuleMode.active:
+            raise HTTPException(status_code=409, detail=f"Rule {rule_id} is already in active mode")
 
-    previous_mode = rule.mode.value
-    rule.mode = RuleMode.active
+        previous_mode = rule.mode.value
+        rule.mode = RuleMode.active
 
-    try:
-        _write_rules_to_yaml(_config.rules_yaml_path)
-    except OSError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to write rules: {e}") from e
+        try:
+            _write_rules_to_yaml(_config.rules_yaml_path)
+        except OSError:
+            rule.mode = RuleMode[previous_mode]  # rollback in-memory state
+            raise HTTPException(status_code=500, detail="Internal server error") from None
 
     _emit_structured_log(
         event="rule_mode_change",
@@ -247,8 +328,9 @@ async def promote_rule(rule_id: str) -> DemotePromoteResponse:
     )
 
 
-@app.get("/circuit-breaker/state")
-async def get_circuit_breaker_state() -> CircuitBreakerState:
+@app.get("/circuit-breaker/state", dependencies=[Depends(_require_api_key)])
+@_limiter.limit("30/minute")
+async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
     """Get current circuit breaker state.
 
     Returns:
@@ -265,20 +347,24 @@ async def get_circuit_breaker_state() -> CircuitBreakerState:
     cb = _circuit_breaker._cb
     state = cb.current_state
 
-    # Extract timing info from pybreaker
     last_failure_time = None
     next_probe_time = None
 
-    if hasattr(cb, "_last_failure_time") and cb._last_failure_time is not None:
-        last_failure_time = datetime.fromtimestamp(cb._last_failure_time).isoformat()
+    try:
+        if getattr(cb, "_last_failure_time", None) is not None:
+            last_failure_time = datetime.fromtimestamp(cb._last_failure_time).isoformat()
+    except (AttributeError, OSError, ValueError):
+        pass
 
-    if state == "open" and hasattr(cb, "_opened_at") and cb._opened_at is not None:
-        next_probe_ms = (cb._opened_at + cb.reset_timeout - datetime.now().timestamp()) * 1000
-        if next_probe_ms > 0:
-            next_probe_time = datetime.now()
-            next_probe_time = datetime.fromtimestamp(
-                datetime.now().timestamp() + next_probe_ms / 1000
-            ).isoformat()
+    try:
+        if state == "open" and getattr(cb, "_opened_at", None) is not None:
+            next_probe_ms = (cb._opened_at + cb.reset_timeout - datetime.now().timestamp()) * 1000
+            if next_probe_ms > 0:
+                next_probe_time = datetime.fromtimestamp(
+                    datetime.now().timestamp() + next_probe_ms / 1000
+                ).isoformat()
+    except (AttributeError, OSError, ValueError):
+        pass
 
     return CircuitBreakerState(
         state=state,

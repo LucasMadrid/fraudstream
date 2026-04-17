@@ -1,7 +1,12 @@
 """ScoringConfig — all fraud scoring service settings, env-var driven."""
 
+import logging
 import os
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_DB_URL = "postgresql://fraudstream:fraudstream@localhost:5432/fraudstream"
 
 
 def _parse_int(env_var: str, default: str) -> int:
@@ -38,9 +43,7 @@ class ScoringConfig:
         default_factory=lambda: os.environ.get("RULES_YAML_PATH", "/opt/rules/rules.yaml")
     )
     fraud_alerts_db_url: str = field(
-        default_factory=lambda: os.environ.get(
-            "FRAUD_ALERTS_DB_URL", "postgresql://fraudstream:fraudstream@localhost:5432/fraudstream"
-        )
+        default_factory=lambda: os.environ.get("FRAUD_ALERTS_DB_URL", _DEFAULT_DB_URL)
     )
     pg_pool_size: int = field(default_factory=lambda: _parse_int("PG_POOL_SIZE", "2"))
     ml_serving_url: str = field(
@@ -60,6 +63,11 @@ class ScoringConfig:
 
     def __post_init__(self) -> None:
         """Validate numeric fields after dataclass initialization."""
+        if self.fraud_alerts_db_url == _DEFAULT_DB_URL:
+            logger.warning(
+                "FRAUD_ALERTS_DB_URL is using default credentials — "
+                "set FRAUD_ALERTS_DB_URL in production."
+            )
         if self.cb_error_threshold < 1:
             raise ValueError("cb_error_threshold must be >= 1")
         if self.cb_open_seconds <= 0:
