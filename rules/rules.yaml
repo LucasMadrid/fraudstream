@@ -7,7 +7,7 @@
   family: "velocity"
   severity: "high"
   enabled: true
-  mode: "shadow"
+  mode: "active"
   conditions:
     field: "vel_count_1m"
     count: 5
