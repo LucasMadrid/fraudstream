@@ -4,6 +4,22 @@ import os
 from dataclasses import dataclass, field
 
 
+def _parse_int(env_var: str, default: str) -> int:
+    raw = os.environ.get(env_var, default)
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(f"Environment variable {env_var}={raw!r} must be an integer") from None
+
+
+def _parse_float(env_var: str, default: str) -> float:
+    raw = os.environ.get(env_var, default)
+    try:
+        return float(raw)
+    except ValueError:
+        raise ValueError(f"Environment variable {env_var}={raw!r} must be a float") from None
+
+
 @dataclass
 class ScoringConfig:
     kafka_brokers: str = field(
@@ -26,24 +42,26 @@ class ScoringConfig:
             "FRAUD_ALERTS_DB_URL", "postgresql://fraudstream:fraudstream@localhost:5432/fraudstream"
         )
     )
-    pg_pool_size: int = field(default_factory=lambda: int(os.environ.get("PG_POOL_SIZE", "2")))
+    pg_pool_size: int = field(
+        default_factory=lambda: _parse_int("PG_POOL_SIZE", "2")
+    )
     ml_serving_url: str = field(
         default_factory=lambda: os.environ.get("ML_SERVING_URL", "http://localhost:5001")
     )
     cb_error_threshold: int = field(
-        default_factory=lambda: int(os.environ.get("CB_ERROR_THRESHOLD", "3"))
+        default_factory=lambda: _parse_int("CB_ERROR_THRESHOLD", "3")
     )
     cb_open_seconds: float = field(
-        default_factory=lambda: float(os.environ.get("CB_OPEN_SECONDS", "30.0"))
+        default_factory=lambda: _parse_float("CB_OPEN_SECONDS", "30.0")
     )
     cb_probe_timeout_ms: float = field(
-        default_factory=lambda: float(os.environ.get("CB_PROBE_TIMEOUT_MS", "5.0"))
+        default_factory=lambda: _parse_float("CB_PROBE_TIMEOUT_MS", "5.0")
     )
     redis_url: str = field(
         default_factory=lambda: os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     )
     cb_error_window_seconds: int = field(
-        default_factory=lambda: int(os.environ.get("CB_ERROR_WINDOW_SECONDS", "10"))
+        default_factory=lambda: _parse_int("CB_ERROR_WINDOW_SECONDS", "10")
     )
 
     def __post_init__(self) -> None:

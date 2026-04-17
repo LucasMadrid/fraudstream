@@ -276,7 +276,7 @@ class TestRuleEvaluatorProcessFunction:
 
     def test_process_element_without_open_raises_assertion(self):
         pf = RuleEvaluatorProcessFunction("/nonexistent/rules.yaml")
-        with pytest.raises(AssertionError, match="open\\(\\) must be called"):
+        with pytest.raises(RuntimeError, match="open\\(\\) must be called"):
             pf.process_element({"vel_count_1m": 6})
 
     def test_process_element_passes_ctx_without_error(self, tmp_path, mock_metrics):

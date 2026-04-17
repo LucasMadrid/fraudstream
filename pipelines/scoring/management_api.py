@@ -76,10 +76,10 @@ def _load_rules_from_yaml(yaml_path: str) -> None:
             data = yaml.safe_load(f)
     except FileNotFoundError as e:
         logger.error("Rules YAML file not found: %s", yaml_path)
-        raise e
+        raise FileNotFoundError(yaml_path) from e
     except yaml.YAMLError as e:
         logger.error("Malformed YAML in %s: %s", yaml_path, e)
-        raise e
+        raise yaml.YAMLError(str(e)) from e
 
     if not isinstance(data, list):
         raise ValueError("Rules config must be a YAML list")
@@ -93,15 +93,13 @@ def _load_rules_from_yaml(yaml_path: str) -> None:
 
 def _write_rules_to_yaml(yaml_path: str) -> None:
     """Write in-memory _rules_dict back to YAML file."""
-    import json as _json
-
-    rules_data = [_json.loads(rule.model_dump_json()) for rule in _rules_dict.values()]
+    rules_data = [json.loads(rule.model_dump_json()) for rule in _rules_dict.values()]
     try:
         with open(yaml_path, "w") as f:
             yaml.dump(rules_data, f, default_flow_style=False)
     except OSError as e:
         logger.error("Failed to write rules to YAML: %s", e)
-        raise e
+        raise OSError(str(e)) from e
 
 
 def _extract_trace_id() -> str:

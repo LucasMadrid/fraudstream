@@ -112,6 +112,7 @@ class RuleEvaluatorProcessFunction:
         rules = RuleLoader.load(self._rules_yaml_path)
         self._evaluator = RuleEvaluator(rules)
 
-    def process_element(self, txn: dict, ctx: object = None) -> EvaluationResult:  # noqa: ARG002
-        assert self._evaluator is not None, "open() must be called before process_element()"
+    def process_element(self, txn: dict, ctx: object | None = None) -> EvaluationResult:  # noqa: ARG002
+        if self._evaluator is None:
+            raise RuntimeError("open() must be called before process_element()")
         return self._evaluator.dispatch(txn)
