@@ -10,6 +10,19 @@ _DEFAULT_DB_URL = "postgresql://fraudstream:fraudstream@localhost:5432/fraudstre
 
 
 def _parse_int(env_var: str, default: str) -> int:
+    """
+    Read the environment variable named by `env_var` and parse its value as an integer.
+    
+    Parameters:
+        env_var (str): Name of the environment variable to read.
+        default (str): Fallback string to use when the environment variable is not set.
+    
+    Returns:
+        int: Integer parsed from the environment variable value or from `default` when the variable is absent.
+    
+    Raises:
+        ValueError: If the resolved value cannot be converted to an integer.
+    """
     raw = os.environ.get(env_var, default)
     try:
         return int(raw)
@@ -62,7 +75,18 @@ class ScoringConfig:
     )
 
     def __post_init__(self) -> None:
-        """Validate numeric fields after dataclass initialization."""
+        """
+        Validate configuration after dataclass initialization.
+        
+        Logs a warning if the database URL is still the default; raises ValueError for invalid circuit-breaker numeric settings.
+        
+        Raises:
+            ValueError: If any of the following are true:
+                - `cb_error_threshold` is less than 1.
+                - `cb_open_seconds` is less than or equal to 0.
+                - `cb_probe_timeout_ms` is not between 1 and 50 (inclusive).
+                - `cb_error_window_seconds` is less than 1.
+        """
         if self.fraud_alerts_db_url == _DEFAULT_DB_URL:
             logger.warning(
                 "FRAUD_ALERTS_DB_URL is using default credentials — "

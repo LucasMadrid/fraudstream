@@ -105,6 +105,14 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Attach security headers to every response."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        """
+        Attach strict security headers to every HTTP response.
+        
+        This middleware ensures responses include the following security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`, and `Content-Security-Policy: default-src 'none'`.
+        
+        Returns:
+            Response: The downstream response with the security headers added.
+        """
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -151,7 +159,12 @@ def _write_rules_to_yaml(yaml_path: str) -> None:
 
 
 def _extract_trace_id() -> str:
-    """Extract trace ID from active OTel span context, or return 'none'."""
+    """
+    Get the current OpenTelemetry span's trace identifier.
+    
+    Returns:
+        trace_id (str): Trace identifier as a lowercase hex string, or 'none' if OpenTelemetry is unavailable, no recording span exists, or the span has no span context.
+    """
     try:
         from opentelemetry import trace
 
@@ -280,20 +293,21 @@ async def promote_rule(
     request: Request,
     rule_id: Annotated[str, Path(pattern=_RULE_ID_PATTERN)],
 ) -> DemotePromoteResponse:
-    """Promote a rule from shadow to active mode.
-
-    Args:
-        rule_id: The rule ID to promote (2-64 alphanumeric/hyphens/underscores).
-
+    """
+    Promote a rule from shadow mode to active mode.
+    
+    Parameters:
+        rule_id (str): Identifier of the rule to promote; must match the service's rule ID pattern.
+    
     Returns:
-        DemotePromoteResponse with previous_mode and new_mode.
-
+        DemotePromoteResponse: Details of the rule mode change, including `previous_mode`, `new_mode`, and `config_event_published`.
+    
     Raises:
-        401: If API key is required and missing/wrong.
-        404: If rule not found.
-        409: If rule is already in active mode.
-        422: If rule_id does not match the allowed pattern.
-        500: If YAML write fails.
+        HTTPException 401: If an API key is required and the request is unauthorized.
+        HTTPException 404: If the specified rule does not exist.
+        HTTPException 409: If the rule is already in active mode.
+        HTTPException 422: If `rule_id` fails validation against the allowed pattern.
+        HTTPException 500: If persisting the updated rules to YAML fails (the in-memory change is rolled back).
     """
     with _rules_lock:
         if rule_id not in _rules_dict:
@@ -331,10 +345,15 @@ async def promote_rule(
 @app.get("/circuit-breaker/state", dependencies=[Depends(_require_api_key)])
 @_limiter.limit("30/minute")
 async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
-    """Get current circuit breaker state.
-
+    """
+    Provide a snapshot of the current circuit breaker state.
+    
     Returns:
-        CircuitBreakerState with state name, failure count, and timing info.
+        CircuitBreakerState: object containing:
+            - `state`: current circuit breaker state name (e.g., "closed", "open", "half-open", or "unknown")
+            - `failure_count`: integer count of recent failures
+            - `last_failure_time`: ISO 8601 timestamp of the last failure, or `None` if unavailable
+            - `next_probe_time`: ISO 8601 timestamp when the next probe is expected for an open breaker, or `None`
     """
     if _circuit_breaker is None:
         return CircuitBreakerState(
