@@ -87,6 +87,7 @@ try:  # pragma: no cover
 
                 dlq_events_total.labels(error_type="LATE_EVENT_BEYOND_ALLOWED_LATENESS").inc()
                 from pipelines.processing.metrics import late_events_beyond_window_total
+
                 late_events_beyond_window_total.labels(stage="velocity", topic="txn.api").inc()
                 dlq_record = build_dlq_record(
                     source_topic="txn.api",
@@ -108,10 +109,7 @@ try:  # pragma: no cover
                 return
 
             # Within-window late event: arrived after watermark but within allowed lateness
-            if (
-                current_watermark != _NO_WATERMARK
-                and event_time_ms < current_watermark
-            ):
+            if current_watermark != _NO_WATERMARK and event_time_ms < current_watermark:
                 late_events_within_window_total.labels(stage="velocity").inc()
                 corrected_record_latency_ms.labels(stage="velocity").observe(
                     (current_watermark - event_time_ms) / 1000.0

@@ -72,10 +72,12 @@ ACTIVE_VEL_MEDIUM = _make_rule(
 @pytest.fixture
 def mock_metrics():
     """Mock the metrics module functions."""
-    with patch("pipelines.scoring.rules.evaluator.record_evaluation") as mock_eval, \
-         patch("pipelines.scoring.rules.evaluator.record_flag") as mock_flag, \
-         patch("pipelines.scoring.rules.evaluator.record_shadow_trigger") as mock_shadow_trigger, \
-         patch("pipelines.scoring.rules.evaluator.record_shadow_fp") as mock_shadow_fp:
+    with (
+        patch("pipelines.scoring.rules.evaluator.record_evaluation") as mock_eval,
+        patch("pipelines.scoring.rules.evaluator.record_flag") as mock_flag,
+        patch("pipelines.scoring.rules.evaluator.record_shadow_trigger") as mock_shadow_trigger,
+        patch("pipelines.scoring.rules.evaluator.record_shadow_fp") as mock_shadow_fp,
+    ):
         yield {
             "record_evaluation": mock_eval,
             "record_flag": mock_flag,

@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 import pytest
 import yaml
 from fastapi.testclient import TestClient
 
 import pipelines.scoring.management_api as api_module
-from pipelines.scoring.rules.models import RuleDefinition, RuleFamily, RuleMode, Severity
-
 
 # ---------------------------------------------------------------------------
 # Helpers

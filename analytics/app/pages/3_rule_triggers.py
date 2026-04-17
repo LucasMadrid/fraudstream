@@ -206,12 +206,12 @@ def load_shadow_rule_metrics() -> pd.DataFrame:
     """
     try:
         # Query total shadow triggers in the last 24 hours
-        triggers_query = 'increase(rule_shadow_triggers_total[24h])'
+        triggers_query = "increase(rule_shadow_triggers_total[24h])"
         triggers_result = query_prometheus(triggers_query)
         triggers_metrics = extract_metrics(triggers_result)
 
         # Query FP count (triggers where determination was clean) in last 24 hours
-        fp_query = 'increase(rule_shadow_fp_total[24h])'
+        fp_query = "increase(rule_shadow_fp_total[24h])"
         fp_result = query_prometheus(fp_query)
         fp_metrics = extract_metrics(fp_result)
 
@@ -259,12 +259,12 @@ if shadow_df.empty:
 else:
     # Create display dataframe with formatted columns
     display_df = shadow_df.copy()
-    display_df["Estimated FP Rate (%)"] = (
-        display_df["estimated_fp_rate"] * 100
-    ).apply(lambda x: f"{x:.2f}%")
-    display_df["Shadow Triggers (24h)"] = display_df[
-        "shadow_triggers_24h"
-    ].apply(lambda x: f"{x:,}")
+    display_df["Estimated FP Rate (%)"] = (display_df["estimated_fp_rate"] * 100).apply(
+        lambda x: f"{x:.2f}%"
+    )
+    display_df["Shadow Triggers (24h)"] = display_df["shadow_triggers_24h"].apply(
+        lambda x: f"{x:,}"
+    )
     display_df["Rule ID"] = display_df["rule_id"]
 
     # Display table
@@ -317,20 +317,16 @@ if not shadow_df.empty:
         can_promote = meets_trigger_threshold and meets_fp_threshold
         disable_reason = ""
         if not meets_trigger_threshold:
-            disable_reason = (
-                f"Insufficient data ({trigger_count} < {MIN_TRIGGERS_FOR_PROMOTION})"
-            )
+            disable_reason = f"Insufficient data ({trigger_count} < {MIN_TRIGGERS_FOR_PROMOTION})"
         elif not meets_fp_threshold:
-            disable_reason = f"FP rate too high ({fp_rate*100:.2f}% >= 2%)"
+            disable_reason = f"FP rate too high ({fp_rate * 100:.2f}% >= 2%)"
 
         # Display rule promotion card
         col1, col2, col3 = st.columns([2, 1, 1])
 
         with col1:
             st.write(f"**{rule_id}**")
-            st.caption(
-                f"Triggers: {trigger_count:,} | FP Rate: {fp_rate*100:.2f}%"
-            )
+            st.caption(f"Triggers: {trigger_count:,} | FP Rate: {fp_rate * 100:.2f}%")
 
         with col2:
             if can_promote:
@@ -398,8 +394,7 @@ with col1:
 
     else:
         st.warning(
-            "Unable to fetch circuit breaker state. "
-            "Ensure management API service is running."
+            "Unable to fetch circuit breaker state. Ensure management API service is running."
         )
 
 with col2:
@@ -411,7 +406,7 @@ with col2:
         # For simplicity in v1, we'll check if any rules recently appeared in shadow mode.
         try:
             # Query rules that had any shadow triggers
-            shadow_check = 'count(rule_shadow_triggers_total > 0)'
+            shadow_check = "count(rule_shadow_triggers_total > 0)"
             check_result = query_prometheus(shadow_check)
             shadow_count = check_result.get("data", {}).get("result", [])
 

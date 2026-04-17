@@ -36,18 +36,14 @@ for state in ["closed", "open", "half_open"]:
 class FraudCircuitBreakerListener(pybreaker.CircuitBreakerListener):
     """Updates Prometheus metrics on circuit breaker state transitions."""
 
-    def state_change(
-        self, cb: pybreaker.CircuitBreaker, old_state: str, new_state: str
-    ) -> None:
+    def state_change(self, cb: pybreaker.CircuitBreaker, old_state: str, new_state: str) -> None:
         """Update gauge when circuit state changes."""
         # Set new state to 1, all others to 0
         for state in ["closed", "open", "half_open"]:
             ml_circuit_breaker_state.labels(state=state).set(1 if state == new_state else 0)
         logger.info("Circuit breaker state changed: %s -> %s", old_state, new_state)
 
-    def before_call(
-        self, cb: pybreaker.CircuitBreaker, func, *args, **kwargs
-    ) -> None:
+    def before_call(self, cb: pybreaker.CircuitBreaker, func, *args, **kwargs) -> None:
         """Increment fallback counter when circuit is open."""
         if cb.current_state == "open":
             ml_fallback_decisions_total.inc()

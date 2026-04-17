@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pybreaker
 import pytest
 
 from pipelines.scoring.circuit_breaker import (
@@ -14,7 +13,7 @@ from pipelines.scoring.circuit_breaker import (
     ml_fallback_decisions_total,
 )
 from pipelines.scoring.config import ScoringConfig
-from pipelines.scoring.ml_client import MLClientError, MLScore, StubMLModelClient
+from pipelines.scoring.ml_client import StubMLModelClient
 
 
 def _config(**kwargs) -> ScoringConfig:

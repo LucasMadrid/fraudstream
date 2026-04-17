@@ -1,4 +1,5 @@
 """ML model client interface and stub implementation for scoring engine."""
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +16,7 @@ class MLClientError(Exception):
 @dataclass(frozen=True)
 class MLScore:
     """Score returned by the ML model."""
+
     fraud_probability: float  # 0.0 to 1.0
     model_version: str
     latency_ms: float

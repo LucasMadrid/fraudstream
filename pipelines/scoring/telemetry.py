@@ -5,6 +5,7 @@ present in v1 docker-compose; deferred to v2. v1 approximation: ParentBased samp
 with TraceIdRatioBased(0.01) root for ALLOW decisions, AlwaysOnSampler logic applied
 via span attribute check for BLOCK/error.
 """
+
 from __future__ import annotations
 
 import logging

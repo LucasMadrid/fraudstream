@@ -175,9 +175,7 @@ async def demote_rule(rule_id: str) -> DemotePromoteResponse:
 
     rule = _rules_dict[rule_id]
     if rule.mode == RuleMode.shadow:
-        raise HTTPException(
-            status_code=409, detail=f"Rule {rule_id} is already in shadow mode"
-        )
+        raise HTTPException(status_code=409, detail=f"Rule {rule_id} is already in shadow mode")
 
     previous_mode = rule.mode.value
     rule.mode = RuleMode.shadow
@@ -223,9 +221,7 @@ async def promote_rule(rule_id: str) -> DemotePromoteResponse:
 
     rule = _rules_dict[rule_id]
     if rule.mode == RuleMode.active:
-        raise HTTPException(
-            status_code=409, detail=f"Rule {rule_id} is already in active mode"
-        )
+        raise HTTPException(status_code=409, detail=f"Rule {rule_id} is already in active mode")
 
     previous_mode = rule.mode.value
     rule.mode = RuleMode.active

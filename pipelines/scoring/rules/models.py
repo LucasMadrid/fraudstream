@@ -137,6 +137,7 @@ class RuleDefinition(BaseModel):
                 "start and end with alphanumeric"
             )
         return v
+
     family: RuleFamily
     conditions: dict[str, Any]
     severity: Severity

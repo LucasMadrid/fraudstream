@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 import pipelines.scoring.telemetry as telemetry_module
@@ -23,9 +21,7 @@ class TestInitTracer:
         init_tracer(allow_sample_rate=0.02)
         from pipelines.scoring.telemetry import trace_sampling_rate
 
-        assert trace_sampling_rate.labels(decision_type="ALLOW")._value.get() == pytest.approx(
-            0.02
-        )
+        assert trace_sampling_rate.labels(decision_type="ALLOW")._value.get() == pytest.approx(0.02)
         assert trace_sampling_rate.labels(decision_type="BLOCK")._value.get() == pytest.approx(1.0)
         assert trace_sampling_rate.labels(decision_type="error")._value.get() == pytest.approx(1.0)
 
