@@ -4,6 +4,45 @@ Stop fraud before it lands. FraudStream processes payment transactions in millis
 
 ---
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [How It Works](#how-it-works)
+  - [Enrichment Pipeline](#enrichment-pipeline)
+  - [Fraud Rule Families](#fraud-rule-families)
+  - [Alert Persistence](#alert-persistence)
+- [Services](#services)
+- [Configuration](#configuration)
+  - [Fraud Rules](#fraud-rules)
+  - [Environment Variables](#environment-variables)
+  - [Kafka Topics](#kafka-topics)
+- [Management API](#management-api)
+  - [Endpoints](#endpoints)
+  - [Security](#security)
+  - [Example](#example)
+- [Observability](#observability)
+  - [Key Metrics](#key-metrics)
+  - [Dashboards and Alerts](#dashboards-and-alerts)
+- [Make Targets](#make-targets)
+  - [Infrastructure](#infrastructure)
+  - [Running](#running)
+  - [Testing](#testing)
+- [Development](#development)
+- [Project Structure](#project-structure)
+- [Design Decisions & Tradeoffs](#design-decisions--tradeoffs)
+  - [1. Stream Processing Runtime](#1-stream-processing-runtime--pyflink-over-java-flink-and-bytewax)
+  - [2. State Backend](#2-state-backend--rocksdb--incremental-checkpoints)
+  - [3. Velocity Windows](#3-velocity-windows--mapstateminute_bucket-over-sliding-event-time-windows)
+  - [4. Serialisation](#4-serialisation--avro-fastavro-over-protobuf-and-json)
+  - [5. Kafka Producer Guarantees](#5-kafka-producer-guarantees--acksall--idempotent)
+  - [6. GeoIP Lookup](#6-geoip-lookup--embedded-maxmind-reader-over-external-api)
+  - [7. Fraud Rule Configuration](#7-fraud-rule-configuration--yaml-file-over-database-or-hardcoded-rules)
+  - [8. Alert Persistence](#8-alert-persistence--dual-sink-kafka--postgresql)
+  - [9. Metrics Bridge](#9-metrics-bridge--daemon-consumer-threads)
+
+---
+
 ## Quick Start
 
 ```bash
