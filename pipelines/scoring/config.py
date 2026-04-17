@@ -42,18 +42,12 @@ class ScoringConfig:
             "FRAUD_ALERTS_DB_URL", "postgresql://fraudstream:fraudstream@localhost:5432/fraudstream"
         )
     )
-    pg_pool_size: int = field(
-        default_factory=lambda: _parse_int("PG_POOL_SIZE", "2")
-    )
+    pg_pool_size: int = field(default_factory=lambda: _parse_int("PG_POOL_SIZE", "2"))
     ml_serving_url: str = field(
         default_factory=lambda: os.environ.get("ML_SERVING_URL", "http://localhost:5001")
     )
-    cb_error_threshold: int = field(
-        default_factory=lambda: _parse_int("CB_ERROR_THRESHOLD", "3")
-    )
-    cb_open_seconds: float = field(
-        default_factory=lambda: _parse_float("CB_OPEN_SECONDS", "30.0")
-    )
+    cb_error_threshold: int = field(default_factory=lambda: _parse_int("CB_ERROR_THRESHOLD", "3"))
+    cb_open_seconds: float = field(default_factory=lambda: _parse_float("CB_OPEN_SECONDS", "30.0"))
     cb_probe_timeout_ms: float = field(
         default_factory=lambda: _parse_float("CB_PROBE_TIMEOUT_MS", "5.0")
     )
