@@ -98,6 +98,8 @@ def _alerts_consumer_thread(
                     severity = str(severity)
                 severity = severity.lower()
                 for rule_id in record.get("matched_rule_names", []):
+                    if rule_id.endswith(":shadow"):
+                        continue
                     family = rule_family_map.get(rule_id, "unknown")
                     rule_flags_total.labels(
                         rule_id=rule_id,
