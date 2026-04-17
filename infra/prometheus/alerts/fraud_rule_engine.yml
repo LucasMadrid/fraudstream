@@ -50,12 +50,13 @@ groups:
 
       - alert: RuleFPRateHigh
         expr: >
-          rate(rule_shadow_triggers_total{mode="active"}[1h])
+          rate(rule_active_fp_total[1h])
           / rate(rule_triggers_total[1h]) > 0.05
         for: 5m
         labels:
           severity: warning
           team: fraud-platform
+          rule_id: "{{ $labels.rule_id }}"
         annotations:
           summary: "Rule {{ $labels.rule_id }} false-positive rate exceeds 5%"
           description: >

@@ -31,8 +31,14 @@ class MLModelClient(ABC):
 
 
 class StubMLModelClient(MLModelClient):
-    """Stub implementation for local dev and testing. Always returns 0.1 probability."""
+    """Stub implementation for local dev and testing."""
+
+    def __init__(self, stub_score: float = 0.0, fail_on_call: bool = False) -> None:
+        self._stub_score = stub_score
+        self._fail_on_call = fail_on_call
 
     def score(self, features: dict) -> MLScore:
         logger.debug("StubMLModelClient.score called with %d features", len(features))
-        return MLScore(fraud_probability=0.1, model_version="stub-v1", latency_ms=0.5)
+        if self._fail_on_call:
+            raise MLClientError("StubMLModelClient configured to fail")
+        return MLScore(fraud_probability=self._stub_score, model_version="stub-v1", latency_ms=0.5)

@@ -41,6 +41,18 @@ rule_shadow_fp_total = Counter(
     ["rule_id"],
 )
 
+rule_triggers_total = Counter(
+    "rule_triggers_total",
+    "Total rule evaluations for active rules (denominator for FP rate alert)",
+    ["rule_id"],
+)
+
+rule_active_fp_total = Counter(
+    "rule_active_fp_total",
+    "Active rule triggers where final determination was clean (false positives)",
+    ["rule_id"],
+)
+
 
 def record_shadow_trigger(rule_id: str) -> None:
     """Increment the shadow trigger counter for a shadow rule that fired."""
@@ -51,6 +63,16 @@ def record_shadow_fp(rule_id: str) -> None:
     """Increment the shadow false positive counter for a shadow rule that didn't change
     determination."""
     rule_shadow_fp_total.labels(rule_id=rule_id).inc()
+
+
+def record_trigger(rule_id: str) -> None:
+    """Increment the active rule trigger counter (denominator for FP rate)."""
+    rule_triggers_total.labels(rule_id=rule_id).inc()
+
+
+def record_active_fp(rule_id: str) -> None:
+    """Increment the active false positive counter when active rule fired but txn was clean."""
+    rule_active_fp_total.labels(rule_id=rule_id).inc()
 
 
 @contextmanager

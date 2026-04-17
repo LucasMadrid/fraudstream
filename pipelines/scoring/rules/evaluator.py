@@ -11,6 +11,7 @@ from pipelines.scoring.metrics import (
     record_flag,
     record_shadow_fp,
     record_shadow_trigger,
+    record_trigger,
 )
 from pipelines.scoring.rules.families.impossible_travel import (
     evaluate_impossible_travel,
@@ -62,6 +63,7 @@ class RuleEvaluator:
                     active_matched.append(rule.rule_id)
                     triggered_severities.append(rule.severity)
                     record_flag(rule.rule_id, rule.family.value, rule.severity.name)
+                    record_trigger(rule.rule_id)
 
         # matched_rules includes active rule IDs and shadow rule IDs with ":shadow" suffix
         matched_rules = active_matched + [f"{r}:shadow" for r in shadow_matched]
@@ -69,7 +71,6 @@ class RuleEvaluator:
         highest_severity = max(triggered_severities).name if triggered_severities else None
         evaluation_timestamp = int(time.time() * 1000)
 
-        # FP tracking: shadow rules that fired but transaction was determined clean
         if determination == "clean":
             for rule_id in shadow_matched:
                 record_shadow_fp(rule_id)

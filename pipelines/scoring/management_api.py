@@ -93,7 +93,7 @@ def _load_rules_from_yaml(yaml_path: str) -> None:
 
 def _write_rules_to_yaml(yaml_path: str) -> None:
     """Write in-memory _rules_dict back to YAML file."""
-    rules_data = [rule.model_dump() for rule in _rules_dict.values()]
+    rules_data = [rule.model_dump(mode="json") for rule in _rules_dict.values()]
     try:
         with open(yaml_path, "w") as f:
             yaml.dump(rules_data, f, default_flow_style=False)

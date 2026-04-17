@@ -28,7 +28,7 @@ class ScoringConfig:
     )
     pg_pool_size: int = field(default_factory=lambda: int(os.environ.get("PG_POOL_SIZE", "2")))
     ml_serving_url: str = field(
-        default_factory=lambda: os.environ.get("ML_SERVING_URL", "http://localhost:8080/score")
+        default_factory=lambda: os.environ.get("ML_SERVING_URL", "http://localhost:5001")
     )
     cb_error_threshold: int = field(
         default_factory=lambda: int(os.environ.get("CB_ERROR_THRESHOLD", "3"))
@@ -42,6 +42,9 @@ class ScoringConfig:
     redis_url: str = field(
         default_factory=lambda: os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     )
+    cb_error_window_seconds: int = field(
+        default_factory=lambda: int(os.environ.get("CB_ERROR_WINDOW_SECONDS", "10"))
+    )
 
     def __post_init__(self) -> None:
         """Validate numeric fields after dataclass initialization."""
@@ -51,3 +54,5 @@ class ScoringConfig:
             raise ValueError("cb_open_seconds must be > 0")
         if not (1 <= self.cb_probe_timeout_ms <= 50):
             raise ValueError("cb_probe_timeout_ms must be between 1 and 50")
+        if self.cb_error_window_seconds < 1:
+            raise ValueError("cb_error_window_seconds must be >= 1")
