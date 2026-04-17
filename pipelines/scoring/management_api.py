@@ -13,15 +13,16 @@ Security:
 - Rate limiting: 10 req/min on mutating endpoints, 30 req/min on read endpoints
 - CORS origins configurable via MANAGEMENT_CORS_ORIGINS (comma-separated, default: none)
 - Security headers on every response (X-Content-Type-Options, X-Frame-Options, HSTS, CSP)
-- Threading lock guards demote/promote read-modify-write cycle
+- Asyncio lock guards demote/promote read-modify-write cycle
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
-import threading
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated
@@ -47,7 +48,7 @@ logger = logging.getLogger(__name__)
 _rules_dict: dict[str, RuleDefinition] = {}
 _circuit_breaker: MLCircuitBreaker | None = None
 _config: ScoringConfig | None = None
-_rules_lock = threading.Lock()
+_rules_lock = asyncio.Lock()
 
 # Rate limiter (in-memory; swap key_func for per-user limiting if auth is bearer-based)
 _limiter = Limiter(key_func=get_remote_address)
@@ -67,7 +68,7 @@ def set_circuit_breaker(cb: MLCircuitBreaker | None) -> None:
 async def _require_api_key(api_key: str | None = Security(_API_KEY_HEADER)) -> None:
     """Enforce X-Api-Key header when MANAGEMENT_API_KEY env var is configured."""
     expected = os.environ.get("MANAGEMENT_API_KEY")
-    if expected and api_key != expected:
+    if expected and (api_key is None or not secrets.compare_digest(expected, api_key)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -254,7 +255,7 @@ async def demote_rule(
         422: If rule_id does not match the allowed pattern.
         500: If YAML write fails.
     """
-    with _rules_lock:
+    async with _rules_lock:
         if rule_id not in _rules_dict:
             raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
 
@@ -309,7 +310,7 @@ async def promote_rule(
         HTTPException 422: If `rule_id` fails validation against the allowed pattern.
         HTTPException 500: If persisting the updated rules to YAML fails (the in-memory change is rolled back).
     """
-    with _rules_lock:
+    async with _rules_lock:
         if rule_id not in _rules_dict:
             raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
 
