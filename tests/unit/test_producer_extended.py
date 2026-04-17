@@ -203,7 +203,7 @@ def test_init_tracer_with_endpoint():
     with patch.dict("os.environ", {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"}):
         with patch.dict(
             sys.modules,
-            {"opentelemetry.exporter.otlp.proto.grpc.trace_exporter": fake_module},
+            {"opentelemetry.exporter.otlp.proto.http.trace_exporter": fake_module},
         ):
             tracer = t.init_tracer()
             assert tracer is not None
