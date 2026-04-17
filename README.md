@@ -141,6 +141,7 @@ Every flagged transaction is written to two sinks simultaneously:
 | MinIO console | `http://localhost:9001` | minioadmin / minioadmin |
 | PostgreSQL | `localhost:5432` | fraudstream / fraudstream |
 | Job metrics endpoint | `http://localhost:8002/metrics` | — |
+| Management API | `http://localhost:8090` | `X-Api-Key` header (optional) |
 
 All services start with `make bootstrap` or `make infra-up`.
 
@@ -160,6 +161,9 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 | `MAXMIND_LICENCE_KEY` | — | Required for `make update-geoip` |
 | `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password |
 | `POSTGRES_PASSWORD` | `fraudstream` | PostgreSQL password |
+| `FRAUD_ALERTS_DB_URL` | `postgresql://fraudstream:fraudstream@...` | PostgreSQL connection URL |
+| `MANAGEMENT_API_KEY` | — | API key for management endpoints (unset = open in dev) |
+| `MANAGEMENT_CORS_ORIGINS` | — | Comma-separated allowed CORS origins (disabled by default) |
 | `LOG_LEVEL` | `INFO` | Job log level (`DEBUG`, `INFO`, `WARNING`) |
 
 ### Kafka Topics
@@ -172,6 +176,42 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 | `txn.processing.dlq` | Avro | Processing errors from enrichment job |
 | `txn.fraud.alerts` | Avro | Fraud alerts from rule engine |
 | `txn.fraud.alerts.dlq` | Avro | Alert Kafka delivery failures |
+
+---
+
+## Management API
+
+The fraud rule engine exposes a REST management API on **port 8090** for operational control without a job restart.
+
+### Endpoints
+
+| Method | Path | Rate limit | Description |
+|--------|------|-----------|-------------|
+| `GET` | `/healthz` | — | Health check (used by Alertmanager) |
+| `GET` | `/circuit-breaker/state` | 30/min | ML circuit breaker state snapshot |
+| `POST` | `/rules/{rule_id}/demote` | 10/min | Demote rule from active → shadow mode |
+| `POST` | `/rules/{rule_id}/promote` | 10/min | Promote rule from shadow → active mode |
+
+### Security
+
+- **API key auth** — Set `MANAGEMENT_API_KEY` env var to enforce `X-Api-Key` header on all endpoints except `/healthz`. Unset means open access (dev/test only).
+- **Rate limiting** — Per-IP: 10 req/min on mutating endpoints, 30 req/min on reads.
+- **Security headers** — Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, and `Content-Security-Policy: default-src 'none'`.
+- **Input validation** — `rule_id` path parameter is validated against `^[a-zA-Z0-9][a-zA-Z0-9\-_]{0,62}[a-zA-Z0-9]$`; invalid IDs return `422`.
+- **TOCTOU guard** — Demote/promote use a threading lock to prevent concurrent read-modify-write races on the YAML file.
+
+### Example
+
+```bash
+# Check circuit breaker state (no auth configured)
+curl http://localhost:8090/circuit-breaker/state
+
+# Demote a rule (with API key)
+curl -X POST http://localhost:8090/rules/VEL-001/demote \
+  -H "X-Api-Key: $MANAGEMENT_API_KEY"
+```
+
+Mode changes are persisted immediately to `rules/rules.yaml` and take effect in the in-memory rule set. A structured JSON audit log entry is emitted for every mode change.
 
 ---
 
