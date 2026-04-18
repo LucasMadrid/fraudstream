@@ -180,3 +180,149 @@ class TestLoadRulesFromYaml:
         p.write_text("key: value")
         with pytest.raises(ValueError, match="must be a YAML list"):
             api_module._load_rules_from_yaml(str(p))
+
+
+# ---------------------------------------------------------------------------
+# Security: API key authentication
+# ---------------------------------------------------------------------------
+
+
+class TestApiKeyAuth:
+    def test_missing_key_returns_401_when_env_set(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.status_code == 401
+
+    def test_wrong_key_returns_401(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.post("/rules/VEL-001/demote", headers={"X-Api-Key": "wrong"})
+        assert resp.status_code == 401
+
+    def test_correct_key_is_accepted(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.post("/rules/VEL-001/demote", headers={"X-Api-Key": "secret-token"})
+        assert resp.status_code == 200
+
+    def test_no_env_key_allows_unauthenticated(self, client, monkeypatch):
+        monkeypatch.delenv("MANAGEMENT_API_KEY", raising=False)
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.status_code == 200
+
+    def test_cb_endpoint_requires_key_when_set(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.get("/circuit-breaker/state")
+        assert resp.status_code == 401
+
+    def test_healthz_never_requires_key(self, client, monkeypatch):
+        monkeypatch.setenv("MANAGEMENT_API_KEY", "secret-token")
+        resp = client.get("/healthz")
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Security: rule_id pattern validation
+# ---------------------------------------------------------------------------
+
+
+class TestRuleIdPatternValidation:
+    def test_valid_rule_id_accepted(self, client):
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.status_code == 200
+
+    def test_rule_id_with_special_chars_returns_422(self, client):
+        resp = client.post("/rules/bad!rule/demote")
+        assert resp.status_code == 422
+
+    def test_rule_id_starting_with_hyphen_returns_422(self, client):
+        resp = client.post("/rules/-bad/demote")
+        assert resp.status_code == 422
+
+    def test_rule_id_with_spaces_returns_422(self, client):
+        resp = client.post("/rules/bad rule/demote")
+        assert resp.status_code == 422
+
+    def test_single_char_rule_id_returns_422(self, client):
+        resp = client.post("/rules/a/demote")
+        assert resp.status_code == 422
+
+    def test_65_char_rule_id_returns_422(self, client):
+        rule_id = "a" * 65
+        resp = client.post(f"/rules/{rule_id}/demote")
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Security: response headers
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityHeaders:
+    def test_healthz_has_x_content_type_options(self, client):
+        resp = client.get("/healthz")
+        assert resp.headers.get("x-content-type-options") == "nosniff"
+
+    def test_healthz_has_x_frame_options(self, client):
+        resp = client.get("/healthz")
+        assert resp.headers.get("x-frame-options") == "DENY"
+
+    def test_healthz_has_csp(self, client):
+        resp = client.get("/healthz")
+        assert resp.headers.get("content-security-policy") == "default-src 'none'"
+
+    def test_healthz_has_hsts(self, client):
+        resp = client.get("/healthz")
+        assert "max-age=31536000" in resp.headers.get("strict-transport-security", "")
+
+    def test_demote_response_has_security_headers(self, client):
+        resp = client.post("/rules/VEL-001/demote")
+        assert resp.headers.get("x-content-type-options") == "nosniff"
+        assert resp.headers.get("x-frame-options") == "DENY"
+
+
+# ---------------------------------------------------------------------------
+# Concurrency: asyncio lock prevents race conditions on demote/promote
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentDemotePromote:
+    def test_concurrent_demote_and_promote_do_not_corrupt_state(self, rules_yaml, monkeypatch):
+        """Two concurrent promote calls on the same rule must not both succeed."""
+        import asyncio
+
+        from pipelines.scoring.config import ScoringConfig
+
+        monkeypatch.setenv("RULES_YAML_PATH", rules_yaml)
+        api_module._config = ScoringConfig(rules_yaml_path=rules_yaml)
+        api_module._load_rules_from_yaml(rules_yaml)
+        api_module._circuit_breaker = None
+
+        async def run():
+            from httpx import ASGITransport, AsyncClient
+
+            async with AsyncClient(
+                transport=ASGITransport(app=api_module.app), base_url="http://test"
+            ) as ac:
+                # Small yield before each request ensures both coroutines are scheduled
+                # before either acquires the lock, giving the gather true concurrency.
+                async def promote():
+                    await asyncio.sleep(0)
+                    return await ac.post("/rules/VEL-SHADOW/promote")
+
+                results = await asyncio.gather(
+                    promote(),
+                    promote(),
+                    return_exceptions=True,
+                )
+            return results
+
+        try:
+            results = asyncio.run(run())
+            exceptions = [r for r in results if isinstance(r, Exception)]
+            assert not exceptions, f"Unexpected exceptions: {exceptions}"
+            statuses = [r.status_code for r in results if hasattr(r, "status_code")]
+            # Exactly one promote should succeed (200) and one should conflict (409)
+            assert sorted(statuses) == [200, 409]
+        finally:
+            api_module._rules_dict = {}
+            api_module._config = None
+            api_module._circuit_breaker = None
