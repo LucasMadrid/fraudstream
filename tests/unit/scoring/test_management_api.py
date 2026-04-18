@@ -297,7 +297,7 @@ class TestConcurrentDemotePromote:
         api_module._circuit_breaker = None
 
         async def run():
-            from httpx import AsyncClient, ASGITransport
+            from httpx import ASGITransport, AsyncClient
 
             async with AsyncClient(
                 transport=ASGITransport(app=api_module.app), base_url="http://test"
