@@ -49,6 +49,7 @@ _circuit_breaker: MLCircuitBreaker | None = None
 _config: ScoringConfig | None = None
 _rules_lock = asyncio.Lock()
 
+
 def _rate_limit_key(request: Request) -> str:
     """Use X-Real-IP if present (set by trusted reverse proxy), else client address.
 
@@ -123,12 +124,12 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         """
         Attach strict security headers to every HTTP response.
-        
+
         This middleware ensures responses include the following security headers:
         ``X-Content-Type-Options: nosniff``, ``X-Frame-Options: DENY``,
         ``Strict-Transport-Security: max-age=31536000; includeSubDomains``,
         and ``Content-Security-Policy: default-src 'none'``.
-        
+
         Returns:
             Response: The downstream response with the security headers added.
         """
@@ -181,7 +182,7 @@ def _write_rules_to_yaml(yaml_path: str) -> None:
 def _extract_trace_id() -> str:
     """
     Get the current OpenTelemetry span's trace identifier.
-    
+
     Returns:
         trace_id (str): Trace identifier as a lowercase hex string, or 'none' if
             OpenTelemetry is unavailable, no recording span exists, or the span
@@ -317,14 +318,14 @@ async def promote_rule(
 ) -> DemotePromoteResponse:
     """
     Promote a rule from shadow mode to active mode.
-    
+
     Parameters:
         rule_id (str): Identifier of the rule to promote; must match the service's rule ID pattern.
-    
+
     Returns:
         DemotePromoteResponse: Details of the rule mode change, including
             `previous_mode`, `new_mode`, and `config_event_published`.
-    
+
     Raises:
         HTTPException 401: If an API key is required and the request is unauthorized.
         HTTPException 404: If the specified rule does not exist.
@@ -371,7 +372,7 @@ async def promote_rule(
 async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
     """
     Provide a snapshot of the current circuit breaker state.
-    
+
     Returns:
         CircuitBreakerState: object containing:
             - `state`: current circuit breaker state name
@@ -403,9 +404,7 @@ async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
     try:
         raw_failure = getattr(cb, "_last_failure_time", None)
         if raw_failure is not None:
-            last_failure_time = datetime.fromtimestamp(
-                float(raw_failure), tz=UTC
-            ).isoformat()
+            last_failure_time = datetime.fromtimestamp(float(raw_failure), tz=UTC).isoformat()
     except (AttributeError, OSError, ValueError, TypeError) as e:
         logger.debug("Could not read _last_failure_time from circuit breaker: %s", type(e).__name__)
 

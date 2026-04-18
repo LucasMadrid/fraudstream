@@ -12,15 +12,15 @@ _DEFAULT_DB_URL = "postgresql://fraudstream:fraudstream@localhost:5432/fraudstre
 def _parse_int(env_var: str, default: str) -> int:
     """
     Read the environment variable named by `env_var` and parse its value as an integer.
-    
+
     Parameters:
         env_var (str): Name of the environment variable to read.
         default (str): Fallback string to use when the environment variable is not set.
-    
+
     Returns:
         int: Integer parsed from the environment variable value or from `default`
             when the variable is absent.
-    
+
     Raises:
         ValueError: If the resolved value cannot be converted to an integer.
     """
@@ -78,7 +78,7 @@ class ScoringConfig:
     def __post_init__(self) -> None:
         """
         Validate configuration after dataclass initialization.
-        
+
         Logs a warning if the database URL is still the default; raises ValueError
         for invalid circuit-breaker numeric settings.
 
