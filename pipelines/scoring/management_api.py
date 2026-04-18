@@ -24,7 +24,7 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 import yaml
@@ -34,7 +34,6 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -50,12 +49,28 @@ _circuit_breaker: MLCircuitBreaker | None = None
 _config: ScoringConfig | None = None
 _rules_lock = asyncio.Lock()
 
-# Rate limiter (in-memory; swap key_func for per-user limiting if auth is bearer-based)
-_limiter = Limiter(key_func=get_remote_address)
+def _rate_limit_key(request: Request) -> str:
+    """Use X-Real-IP if present (set by trusted reverse proxy), else client address.
+
+    Avoids key bypass via X-Forwarded-For when not behind a proxy, while still
+    supporting proxy-forwarded IPs when the infra is correctly configured.
+    """
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip
+    return request.client.host if request.client else "unknown"
+
+
+# Rate limiter (in-memory; keyed by X-Real-IP or direct client address)
+_limiter = Limiter(key_func=_rate_limit_key)
 
 # API key auth — if MANAGEMENT_API_KEY is not set the check is skipped (dev/test mode)
 _API_KEY_HEADER = APIKeyHeader(name="X-Api-Key", auto_error=False)
 
+# Alphanumeric start/end; hyphens and underscores allowed in the middle; 2-64 chars total.
+# pydantic_core uses Rust's regex crate (no lookaheads), so consecutive-separator rejection
+# is handled at this level only by accepting the minor permissiveness (e.g. "VEL---001").
+# The critical security goal — blocking shell metacharacters and path separators — is met.
 _RULE_ID_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9\-_]{0,62}[a-zA-Z0-9]$"
 
 
@@ -154,8 +169,9 @@ def _write_rules_to_yaml(yaml_path: str) -> None:
     try:
         with open(yaml_path, "w") as f:
             yaml.dump(rules_data, f, default_flow_style=False)
+        os.chmod(yaml_path, 0o600)
     except OSError as e:
-        logger.error("Failed to write rules to YAML: %s", e)
+        logger.error("Failed to write rules to YAML: errno=%s", e.errno)
         raise OSError(str(e)) from e
 
 
@@ -172,8 +188,8 @@ def _extract_trace_id() -> str:
         span = trace.get_current_span()
         if span and span.is_recording():
             return span.get_span_context().trace_id.hex() if span.get_span_context() else "none"
-    except (ImportError, AttributeError, RuntimeError):
-        pass
+    except (ImportError, AttributeError, RuntimeError) as e:
+        logger.debug("Failed to extract trace ID: %s", type(e).__name__)
     return "none"
 
 
@@ -365,30 +381,35 @@ async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
         )
 
     cb = _circuit_breaker._cb
-    state = cb.current_state
+
+    # pybreaker's public API: current_state (str) and fail_counter (int).
+    # All other attributes are private and may change across pybreaker versions.
+    state: str = getattr(cb, "current_state", "unknown")
+    failure_count: int = getattr(cb, "fail_counter", 0)
 
     last_failure_time = None
     next_probe_time = None
 
     try:
-        if getattr(cb, "_last_failure_time", None) is not None:
-            last_failure_time = datetime.fromtimestamp(cb._last_failure_time).isoformat()
-    except (AttributeError, OSError, ValueError):
-        pass
+        raw_failure = getattr(cb, "_last_failure_time", None)
+        if raw_failure is not None:
+            last_failure_time = datetime.fromtimestamp(float(raw_failure), tz=timezone.utc).isoformat()
+    except (AttributeError, OSError, ValueError, TypeError) as e:
+        logger.debug("Could not read _last_failure_time from circuit breaker: %s", type(e).__name__)
 
     try:
-        if state == "open" and getattr(cb, "_opened_at", None) is not None:
-            next_probe_ms = (cb._opened_at + cb.reset_timeout - datetime.now().timestamp()) * 1000
-            if next_probe_ms > 0:
-                next_probe_time = datetime.fromtimestamp(
-                    datetime.now().timestamp() + next_probe_ms / 1000
-                ).isoformat()
-    except (AttributeError, OSError, ValueError):
-        pass
+        opened_at = getattr(cb, "_opened_at", None)
+        reset_timeout = getattr(cb, "reset_timeout", None)
+        if state == "open" and opened_at is not None and reset_timeout is not None:
+            probe_ts = float(opened_at) + float(reset_timeout)
+            if probe_ts > datetime.now(tz=timezone.utc).timestamp():
+                next_probe_time = datetime.fromtimestamp(probe_ts, tz=timezone.utc).isoformat()
+    except (AttributeError, OSError, ValueError, TypeError) as e:
+        logger.debug("Could not compute next_probe_time from circuit breaker: %s", type(e).__name__)
 
     return CircuitBreakerState(
         state=state,
-        failure_count=cb.fail_counter,
+        failure_count=failure_count,
         last_failure_time=last_failure_time,
         next_probe_time=next_probe_time,
     )

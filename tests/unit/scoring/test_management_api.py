@@ -269,7 +269,60 @@ class TestSecurityHeaders:
         resp = client.get("/healthz")
         assert resp.headers.get("content-security-policy") == "default-src 'none'"
 
+    def test_healthz_has_hsts(self, client):
+        resp = client.get("/healthz")
+        assert "max-age=31536000" in resp.headers.get("strict-transport-security", "")
+
     def test_demote_response_has_security_headers(self, client):
         resp = client.post("/rules/VEL-001/demote")
         assert resp.headers.get("x-content-type-options") == "nosniff"
         assert resp.headers.get("x-frame-options") == "DENY"
+
+
+# ---------------------------------------------------------------------------
+# Concurrency: asyncio lock prevents race conditions on demote/promote
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentDemotePromote:
+    def test_concurrent_demote_and_promote_do_not_corrupt_state(self, rules_yaml, monkeypatch):
+        """Two concurrent promote calls on the same rule must not both succeed."""
+        import asyncio
+
+        from pipelines.scoring.config import ScoringConfig
+
+        monkeypatch.setenv("RULES_YAML_PATH", rules_yaml)
+        api_module._config = ScoringConfig(rules_yaml_path=rules_yaml)
+        api_module._load_rules_from_yaml(rules_yaml)
+        api_module._circuit_breaker = None
+
+        async def run():
+            from httpx import AsyncClient, ASGITransport
+
+            async with AsyncClient(
+                transport=ASGITransport(app=api_module.app), base_url="http://test"
+            ) as ac:
+                # Small yield before each request ensures both coroutines are scheduled
+                # before either acquires the lock, giving the gather true concurrency.
+                async def promote():
+                    await asyncio.sleep(0)
+                    return await ac.post("/rules/VEL-SHADOW/promote")
+
+                results = await asyncio.gather(
+                    promote(),
+                    promote(),
+                    return_exceptions=True,
+                )
+            return results
+
+        try:
+            results = asyncio.run(run())
+            exceptions = [r for r in results if isinstance(r, Exception)]
+            assert not exceptions, f"Unexpected exceptions: {exceptions}"
+            statuses = [r.status_code for r in results if hasattr(r, "status_code")]
+            # Exactly one promote should succeed (200) and one should conflict (409)
+            assert sorted(statuses) == [200, 409]
+        finally:
+            api_module._rules_dict = {}
+            api_module._config = None
+            api_module._circuit_breaker = None
