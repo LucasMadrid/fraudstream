@@ -195,11 +195,11 @@ services:
       retries: 5
 
   scoring-management:
-    image: python:3.11-slim
+    build:
+      context: ..
+      dockerfile: infra/scoring-management/Dockerfile
     container_name: fraudstream-scoring-management
-    command: >
-      sh -c "pip install fastapi uvicorn pydantic pybreaker prometheus-client pyyaml redis slowapi --quiet &&
-             uvicorn pipelines.scoring.management_api:app --host 0.0.0.0 --port 8090"
+    user: "1000:1000"
     ports:
       - "8090:8090"
     volumes:
