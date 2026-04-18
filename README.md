@@ -237,7 +237,7 @@ The fraud rule engine exposes a REST management API on **port 8090** for operati
 - **Rate limiting** — Per-IP: 10 req/min on mutating endpoints, 30 req/min on reads.
 - **Security headers** — Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, and `Content-Security-Policy: default-src 'none'`.
 - **Input validation** — `rule_id` path parameter is validated against `^[a-zA-Z0-9][a-zA-Z0-9\-_]{0,62}[a-zA-Z0-9]$`; invalid IDs return `422`.
-- **TOCTOU guard** — Demote/promote use a threading lock to prevent concurrent read-modify-write races on the YAML file.
+- **TOCTOU guard** — Demote/promote use an asyncio lock to prevent concurrent read-modify-write races on the YAML file.
 
 ### Example
 
