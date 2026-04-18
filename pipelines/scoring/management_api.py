@@ -124,7 +124,10 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         """
         Attach strict security headers to every HTTP response.
         
-        This middleware ensures responses include the following security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`, and `Content-Security-Policy: default-src 'none'`.
+        This middleware ensures responses include the following security headers:
+        ``X-Content-Type-Options: nosniff``, ``X-Frame-Options: DENY``,
+        ``Strict-Transport-Security: max-age=31536000; includeSubDomains``,
+        and ``Content-Security-Policy: default-src 'none'``.
         
         Returns:
             Response: The downstream response with the security headers added.
@@ -180,7 +183,9 @@ def _extract_trace_id() -> str:
     Get the current OpenTelemetry span's trace identifier.
     
     Returns:
-        trace_id (str): Trace identifier as a lowercase hex string, or 'none' if OpenTelemetry is unavailable, no recording span exists, or the span has no span context.
+        trace_id (str): Trace identifier as a lowercase hex string, or 'none' if
+            OpenTelemetry is unavailable, no recording span exists, or the span
+            has no span context.
     """
     try:
         from opentelemetry import trace
@@ -317,14 +322,16 @@ async def promote_rule(
         rule_id (str): Identifier of the rule to promote; must match the service's rule ID pattern.
     
     Returns:
-        DemotePromoteResponse: Details of the rule mode change, including `previous_mode`, `new_mode`, and `config_event_published`.
+        DemotePromoteResponse: Details of the rule mode change, including
+            `previous_mode`, `new_mode`, and `config_event_published`.
     
     Raises:
         HTTPException 401: If an API key is required and the request is unauthorized.
         HTTPException 404: If the specified rule does not exist.
         HTTPException 409: If the rule is already in active mode.
         HTTPException 422: If `rule_id` fails validation against the allowed pattern.
-        HTTPException 500: If persisting the updated rules to YAML fails (the in-memory change is rolled back).
+        HTTPException 500: If persisting the updated rules to YAML fails
+            (the in-memory change is rolled back).
     """
     async with _rules_lock:
         if rule_id not in _rules_dict:
@@ -367,10 +374,13 @@ async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
     
     Returns:
         CircuitBreakerState: object containing:
-            - `state`: current circuit breaker state name (e.g., "closed", "open", "half-open", or "unknown")
+            - `state`: current circuit breaker state name
+              (e.g., "closed", "open", "half-open", or "unknown")
             - `failure_count`: integer count of recent failures
-            - `last_failure_time`: ISO 8601 timestamp of the last failure, or `None` if unavailable
-            - `next_probe_time`: ISO 8601 timestamp when the next probe is expected for an open breaker, or `None`
+            - `last_failure_time`: ISO 8601 timestamp of the last failure,
+              or `None` if unavailable
+            - `next_probe_time`: ISO 8601 timestamp when the next probe is
+              expected for an open breaker, or `None`
     """
     if _circuit_breaker is None:
         return CircuitBreakerState(
@@ -393,7 +403,9 @@ async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
     try:
         raw_failure = getattr(cb, "_last_failure_time", None)
         if raw_failure is not None:
-            last_failure_time = datetime.fromtimestamp(float(raw_failure), tz=timezone.utc).isoformat()
+            last_failure_time = datetime.fromtimestamp(
+                float(raw_failure), tz=timezone.utc
+            ).isoformat()
     except (AttributeError, OSError, ValueError, TypeError) as e:
         logger.debug("Could not read _last_failure_time from circuit breaker: %s", type(e).__name__)
 

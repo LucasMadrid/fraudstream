@@ -18,7 +18,8 @@ def _parse_int(env_var: str, default: str) -> int:
         default (str): Fallback string to use when the environment variable is not set.
     
     Returns:
-        int: Integer parsed from the environment variable value or from `default` when the variable is absent.
+        int: Integer parsed from the environment variable value or from `default`
+            when the variable is absent.
     
     Raises:
         ValueError: If the resolved value cannot be converted to an integer.
@@ -78,8 +79,9 @@ class ScoringConfig:
         """
         Validate configuration after dataclass initialization.
         
-        Logs a warning if the database URL is still the default; raises ValueError for invalid circuit-breaker numeric settings.
-        
+        Logs a warning if the database URL is still the default; raises ValueError
+        for invalid circuit-breaker numeric settings.
+
         Raises:
             ValueError: If any of the following are true:
                 - `cb_error_threshold` is less than 1.
