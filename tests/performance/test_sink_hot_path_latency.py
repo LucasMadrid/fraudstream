@@ -261,8 +261,7 @@ def test_invoke_does_not_block_during_flush(sink_with_mocked_table, enriched_rec
         # Verify first batch (0-49) is fast: avg < 1ms
         first_batch_avg_ms = sum(invoke_times_ms[0:50]) / 50
         assert first_batch_avg_ms < 1.0, (
-            f"First batch average latency too high: {first_batch_avg_ms:.3f}ms, "
-            f"expected < 1.0ms"
+            f"First batch average latency too high: {first_batch_avg_ms:.3f}ms, expected < 1.0ms"
         )
 
         # Verify the flushing invoke (50th) is slow: > 400ms
@@ -275,8 +274,7 @@ def test_invoke_does_not_block_during_flush(sink_with_mocked_table, enriched_rec
         # Verify second batch (51-100) is fast after flush: avg < 1ms
         second_batch_avg_ms = sum(invoke_times_ms[50:]) / 50
         assert second_batch_avg_ms < 1.0, (
-            f"Second batch average latency too high: {second_batch_avg_ms:.3f}ms, "
-            f"expected < 1.0ms"
+            f"Second batch average latency too high: {second_batch_avg_ms:.3f}ms, expected < 1.0ms"
         )
 
         # Log results

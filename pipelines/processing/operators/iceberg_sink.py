@@ -387,9 +387,7 @@ try:  # pragma: no cover
                         elif isinstance(value, bool):
                             columns[field_name].append(value)
                         elif isinstance(value, str):
-                            columns[field_name].append(
-                                value.lower() in ("true", "1", "yes")
-                            )
+                            columns[field_name].append(value.lower() in ("true", "1", "yes"))
                         else:
                             columns[field_name].append(bool(value))
                     # Everything else is a string or None
@@ -456,9 +454,7 @@ try:  # pragma: no cover
                 velocity_table = pa.table(velocity_columns).to_pandas()
                 from feast.data_source import PushMode
 
-                self._feast_store.push(
-                    "velocity_push_source", velocity_table, to=PushMode.ONLINE
-                )
+                self._feast_store.push("velocity_push_source", velocity_table, to=PushMode.ONLINE)
             except Exception as e:
                 logger.error(f"Failed to push velocity features to Feast: {e}", exc_info=True)
 
@@ -523,9 +519,7 @@ try:  # pragma: no cover
                     ),
                 }
                 device_table = pa.table(device_columns).to_pandas()
-                self._feast_store.push(
-                    "device_push_source", device_table, to=PushMode.ONLINE
-                )
+                self._feast_store.push("device_push_source", device_table, to=PushMode.ONLINE)
             except Exception as e:
                 logger.error(f"Failed to push device features to Feast: {e}", exc_info=True)
 
@@ -773,9 +767,7 @@ except ImportError:
                         elif isinstance(value, bool):
                             columns[field_name].append(value)
                         elif isinstance(value, str):
-                            columns[field_name].append(
-                                value.lower() in ("true", "1", "yes")
-                            )
+                            columns[field_name].append(value.lower() in ("true", "1", "yes"))
                         else:
                             columns[field_name].append(bool(value))
                     else:

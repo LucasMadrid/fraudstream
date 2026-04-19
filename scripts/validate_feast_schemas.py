@@ -93,12 +93,8 @@ def check_feast_view(feast_file: Path, expected_fields: list[str]) -> list[str]:
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Validate Feast schema alignment with Avro"
-    )
-    parser.add_argument(
-        "--avsc", required=True, help="Path to .avsc schema file"
-    )
+    parser = argparse.ArgumentParser(description="Validate Feast schema alignment with Avro")
+    parser.add_argument("--avsc", required=True, help="Path to .avsc schema file")
     parser.add_argument(
         "--feast-repo",
         required=True,

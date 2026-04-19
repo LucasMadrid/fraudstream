@@ -179,9 +179,7 @@ def generate_create_table(fields: list[tuple[str, str, bool]]) -> str:
     )
 
 
-def generate_alter_statements(
-    new_fields: list[tuple[str, str, bool]], existing: set[str]
-) -> str:
+def generate_alter_statements(new_fields: list[tuple[str, str, bool]], existing: set[str]) -> str:
     """Generate ALTER TABLE ADD COLUMN statements.
 
     Args:
@@ -195,24 +193,15 @@ def generate_alter_statements(
     for name, sql_type, _ in new_fields:
         if name not in existing:
             # ALTER ADD COLUMN must always be nullable — Iceberg cannot backfill NOT NULL
-            statements.append(
-                f"ALTER TABLE enriched_transactions ADD COLUMN "
-                f"{name} {sql_type};\n"
-            )
+            statements.append(f"ALTER TABLE enriched_transactions ADD COLUMN {name} {sql_type};\n")
     return "".join(statements)
 
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Generate idempotent Iceberg DDL from Avro schema"
-    )
-    parser.add_argument(
-        "--avsc", required=True, help="Path to .avsc schema file"
-    )
-    parser.add_argument(
-        "--output", required=True, help="Path to output .sql file"
-    )
+    parser = argparse.ArgumentParser(description="Generate idempotent Iceberg DDL from Avro schema")
+    parser.add_argument("--avsc", required=True, help="Path to .avsc schema file")
+    parser.add_argument("--output", required=True, help="Path to output .sql file")
     args = parser.parse_args()
 
     try:

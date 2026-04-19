@@ -27,6 +27,7 @@ def _has_pyarrow() -> bool:
     """Check if pyarrow is available."""
     try:
         import pyarrow  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -36,6 +37,7 @@ def _has_pybreaker() -> bool:
     """Check if pybreaker is available."""
     try:
         from pybreaker import CircuitBreaker  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -262,9 +264,7 @@ def test_circuit_open_emits_dlq_event(sink_with_breaker, enriched_record):
     sink._buffer = [record]
 
     # Capture DLQ logs
-    with patch(
-        "pipelines.processing.operators.iceberg_sink.dlq_logger"
-    ) as mock_dlq_logger:
+    with patch("pipelines.processing.operators.iceberg_sink.dlq_logger") as mock_dlq_logger:
         sink._flush()
         # Verify DLQ logger was called
         mock_dlq_logger.warning.assert_called()

@@ -26,6 +26,7 @@ def _has_pyarrow() -> bool:
     """Check if pyarrow is available."""
     try:
         import pyarrow  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -119,9 +120,7 @@ def test_catalog_unavailable_increments_metric(sink, enriched_record):
     record = {**enriched_record, "transaction_id": "txn-catalog-001"}
     sink._buffer = [record]
 
-    with patch(
-        "pipelines.processing.operators.iceberg_sink._increment_counter"
-    ) as mock_counter:
+    with patch("pipelines.processing.operators.iceberg_sink._increment_counter") as mock_counter:
         sink._flush()
         # Verify the catalog unavailable counter was incremented
         mock_counter.assert_called_with("iceberg_catalog_unavailable_total")
@@ -187,9 +186,7 @@ def test_catalog_failure_emits_structured_dlq_log(sink, enriched_record):
     record = {**enriched_record, "transaction_id": "txn-dlq-001"}
     sink._buffer = [record]
 
-    with patch(
-        "pipelines.processing.operators.iceberg_sink.dlq_logger"
-    ) as mock_dlq_logger:
+    with patch("pipelines.processing.operators.iceberg_sink.dlq_logger") as mock_dlq_logger:
         sink._flush()
 
         # Verify DLQ logger was called
@@ -233,10 +230,7 @@ def test_buffer_cleared_on_catalog_failure(sink, enriched_record):
     """
     sink._table.append.side_effect = ConnectionError("Catalog unavailable")
 
-    records = [
-        {**enriched_record, "transaction_id": f"txn-{i:03d}"}
-        for i in range(5)
-    ]
+    records = [{**enriched_record, "transaction_id": f"txn-{i:03d}"} for i in range(5)]
     sink._buffer = records
     assert len(sink._buffer) == 5
 
@@ -313,9 +307,7 @@ def test_os_error_increments_catalog_counter(sink, enriched_record):
     record = {**enriched_record, "transaction_id": "txn-os-001"}
     sink._buffer = [record]
 
-    with patch(
-        "pipelines.processing.operators.iceberg_sink._increment_counter"
-    ) as mock_counter:
+    with patch("pipelines.processing.operators.iceberg_sink._increment_counter") as mock_counter:
         sink._flush()
         # Verify catalog unavailable counter was incremented
         mock_counter.assert_called_with("iceberg_catalog_unavailable_total")
@@ -354,9 +346,7 @@ def test_catalog_failure_after_dedup(sink, enriched_record):
 
     sink._buffer = [record_a, record_b, record_a_dup, record_c, record_b_dup]
 
-    with patch(
-        "pipelines.processing.operators.iceberg_sink.dlq_logger"
-    ) as mock_dlq_logger:
+    with patch("pipelines.processing.operators.iceberg_sink.dlq_logger") as mock_dlq_logger:
         sink._flush()
 
         # Verify DLQ was called
@@ -438,9 +428,7 @@ def test_catalog_error_does_not_increment_buffer_overflow(sink, enriched_record)
     record = {**enriched_record, "transaction_id": "txn-001"}
     sink._buffer = [record]
 
-    with patch(
-        "pipelines.processing.operators.iceberg_sink._increment_counter"
-    ) as mock_counter:
+    with patch("pipelines.processing.operators.iceberg_sink._increment_counter") as mock_counter:
         sink._flush()
 
         # Get all calls to _increment_counter

@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 dlq_logger = logging.getLogger("dlq")
 
 # Configuration from environment
-ICEBERG_DECISIONS_BUFFER_MAX = int(
-    os.environ.get("ICEBERG_DECISIONS_BUFFER_MAX", "100")
-)
+ICEBERG_DECISIONS_BUFFER_MAX = int(os.environ.get("ICEBERG_DECISIONS_BUFFER_MAX", "100"))
 ICEBERG_REST_URI = os.environ.get("ICEBERG_REST_URI", "http://localhost:8181")
 ICEBERG_WAREHOUSE = os.environ.get("ICEBERG_WAREHOUSE", "s3://warehouse")
 AWS_S3_ENDPOINT = os.environ.get("AWS_S3_ENDPOINT", "http://localhost:9000")
@@ -97,9 +95,7 @@ try:  # pragma: no cover
             try:
                 from pyiceberg.catalog import load_catalog
 
-                self._table = load_catalog("iceberg").load_table(
-                    "default.fraud_decisions"
-                )
+                self._table = load_catalog("iceberg").load_table("default.fraud_decisions")
                 logger.info("Loaded Iceberg table: default.fraud_decisions")
             except Exception as e:
                 logger.error(
@@ -137,6 +133,7 @@ try:  # pragma: no cover
                 # Convert FraudDecision dataclass to dict if needed
                 if hasattr(value, "__dataclass_fields__"):
                     from dataclasses import asdict
+
                     record = asdict(value)
                 else:
                     record = value
@@ -180,9 +177,7 @@ try:  # pragma: no cover
 
             batch_size = len(deduplicated)
             first_txn_id = (
-                deduplicated[0].get("transaction_id", "unknown")
-                if deduplicated
-                else "unknown"
+                deduplicated[0].get("transaction_id", "unknown") if deduplicated else "unknown"
             )
 
             # Convert to PyArrow table and flush with timeout
@@ -195,9 +190,7 @@ try:  # pragma: no cover
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _exec:
                         future = _exec.submit(self._breaker.call, self._table.append, pa_table)
                         future.result(timeout=ICEBERG_FLUSH_TIMEOUT_SEC)
-                    logger.info(
-                        f"Flushed {batch_size} records to default.fraud_decisions"
-                    )
+                    logger.info(f"Flushed {batch_size} records to default.fraud_decisions")
                 except concurrent.futures.TimeoutError:
                     logger.warning(
                         f"Iceberg flush timed out after {ICEBERG_FLUSH_TIMEOUT_SEC}s "
@@ -227,9 +220,7 @@ try:  # pragma: no cover
                         )
                     )
                 elif isinstance(e, (ConnectionError, OSError)):
-                    logger.warning(
-                        f"Iceberg catalog connection error: {e}; DLQ'ing batch"
-                    )
+                    logger.warning(f"Iceberg catalog connection error: {e}; DLQ'ing batch")
                     _increment_counter("iceberg_decisions_catalog_unavailable_total")
                     _emit_dlq_event(
                         _DLQEvent(
@@ -240,9 +231,7 @@ try:  # pragma: no cover
                         )
                     )
                 else:
-                    logger.warning(
-                        f"Iceberg flush failed: {e}; DLQ'ing batch of {batch_size}"
-                    )
+                    logger.warning(f"Iceberg flush failed: {e}; DLQ'ing batch of {batch_size}")
                     _emit_dlq_event(
                         _DLQEvent(
                             event="iceberg_decisions_sink_dlq",
@@ -305,19 +294,13 @@ try:  # pragma: no cover
 
                     if field_name == "fraud_score":
                         # Ensure float64
-                        columns[field_name].append(
-                            float(value) if value is not None else 0.0
-                        )
+                        columns[field_name].append(float(value) if value is not None else 0.0)
                     elif field_name == "decision_time_ms":
                         # Iceberg timestamp(6) = microseconds; value is epoch-ms → multiply by 1000
-                        columns[field_name].append(
-                            int(value) * 1000 if value is not None else 0
-                        )
+                        columns[field_name].append(int(value) * 1000 if value is not None else 0)
                     elif field_name == "latency_ms":
                         # Ensure float64
-                        columns[field_name].append(
-                            float(value) if value is not None else 0.0
-                        )
+                        columns[field_name].append(float(value) if value is not None else 0.0)
                     elif field_name == "rule_triggers":
                         # List of strings — preserve as-is or empty list
                         if value is None:
@@ -328,9 +311,7 @@ try:  # pragma: no cover
                             columns[field_name].append([])
                     else:
                         # Everything else is a string
-                        columns[field_name].append(
-                            str(value) if value is not None else ""
-                        )
+                        columns[field_name].append(str(value) if value is not None else "")
 
             # Build arrow arrays and table
             arrays = [pa.array(columns[name], type=schema.field(name).type) for name in field_names]
@@ -355,15 +336,11 @@ except ImportError:
             try:
                 from pyiceberg.catalog import load_catalog
 
-                self._table = load_catalog("iceberg").load_table(
-                    "default.fraud_decisions"
-                )
+                self._table = load_catalog("iceberg").load_table("default.fraud_decisions")
                 self._catalog_loaded = True
                 logger.info("Loaded Iceberg table: default.fraud_decisions")
             except Exception as e:
-                logger.warning(
-                    f"Could not load Iceberg catalog in test environment: {e}"
-                )
+                logger.warning(f"Could not load Iceberg catalog in test environment: {e}")
                 self._catalog_loaded = False
 
             try:
@@ -387,6 +364,7 @@ except ImportError:
                 # Convert FraudDecision dataclass to dict if needed
                 if hasattr(value, "__dataclass_fields__"):
                     from dataclasses import asdict
+
                     record = asdict(value)
                 else:
                     record = value
@@ -420,9 +398,7 @@ except ImportError:
 
             batch_size = len(deduplicated)
             first_txn_id = (
-                deduplicated[0].get("transaction_id", "unknown")
-                if deduplicated
-                else "unknown"
+                deduplicated[0].get("transaction_id", "unknown") if deduplicated else "unknown"
             )
 
             try:
@@ -432,9 +408,7 @@ except ImportError:
                         self._breaker.call(self._table.append, pa_table)
                     else:
                         self._table.append(pa_table)
-                    logger.info(
-                        f"Flushed {batch_size} records to default.fraud_decisions"
-                    )
+                    logger.info(f"Flushed {batch_size} records to default.fraud_decisions")
 
             except Exception as e:
                 if "CircuitBreakerError" in type(e).__name__:
@@ -487,18 +461,12 @@ except ImportError:
                     value = record.get(field_name)
 
                     if field_name == "fraud_score":
-                        columns[field_name].append(
-                            float(value) if value is not None else 0.0
-                        )
+                        columns[field_name].append(float(value) if value is not None else 0.0)
                     elif field_name == "decision_time_ms":
                         # Iceberg timestamp(6) = microseconds; value is epoch-ms → multiply by 1000
-                        columns[field_name].append(
-                            int(value) * 1000 if value is not None else 0
-                        )
+                        columns[field_name].append(int(value) * 1000 if value is not None else 0)
                     elif field_name == "latency_ms":
-                        columns[field_name].append(
-                            float(value) if value is not None else 0.0
-                        )
+                        columns[field_name].append(float(value) if value is not None else 0.0)
                     elif field_name == "rule_triggers":
                         if value is None:
                             columns[field_name].append([])
@@ -507,9 +475,7 @@ except ImportError:
                         else:
                             columns[field_name].append([])
                     else:
-                        columns[field_name].append(
-                            str(value) if value is not None else ""
-                        )
+                        columns[field_name].append(str(value) if value is not None else "")
 
             arrays = [pa.array(columns[name], type=schema.field(name).type) for name in field_names]
             return pa.table({name: arr for name, arr in zip(field_names, arrays)}, schema=schema)

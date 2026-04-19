@@ -39,6 +39,7 @@ def sink():
     s._table = MagicMock()
     # Initialize breaker manually
     from pybreaker import CircuitBreaker
+
     s._breaker = CircuitBreaker(fail_max=3, reset_timeout=30, listeners=[])
     s._catalog_loaded = True
     return s
@@ -111,9 +112,7 @@ def test_flush_on_time_threshold(sink):
     assert sink._table.append.call_count == 0
 
     # Mock time.time() in the sink module to advance by 1.5 seconds
-    with patch(
-        "pipelines.scoring.sinks.iceberg_decisions.time.time"
-    ) as mock_time:
+    with patch("pipelines.scoring.sinks.iceberg_decisions.time.time") as mock_time:
         mock_time.return_value = initial_time + 1.5
 
         # Invoke second record — should trigger flush
@@ -200,9 +199,7 @@ def test_in_batch_deduplication(sink):
     sink._catalog_loaded = True
 
     decision1 = _make_fraud_decision(transaction_id="txn-001", fraud_score=0.1)
-    decision1_dup = _make_fraud_decision(
-        transaction_id="txn-001", fraud_score=0.5
-    )
+    decision1_dup = _make_fraud_decision(transaction_id="txn-001", fraud_score=0.5)
     decision2 = _make_fraud_decision(transaction_id="txn-002", fraud_score=0.2)
 
     # Add all 3 to buffer
@@ -233,6 +230,7 @@ def test_in_batch_deduplication(sink):
 def _record_dict(decision: FraudDecision) -> dict:
     """Convert FraudDecision to dict (helper)."""
     from dataclasses import asdict
+
     return asdict(decision)
 
 
@@ -317,9 +315,7 @@ def test_no_exception_propagation(sink):
         # Trigger a flush by calling _flush directly
         sink._flush()
     except Exception as e:
-        pytest.fail(
-            f"invoke() should not raise, but got: {type(e).__name__}: {e}"
-        )
+        pytest.fail(f"invoke() should not raise, but got: {type(e).__name__}: {e}")
 
     # Buffer should still be cleared
     assert len(sink._buffer) == 0

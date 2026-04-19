@@ -64,12 +64,10 @@ def assert_columns_exist(cursor, view_name: str, expected_columns: list[str]):
     extra = set(actual_columns) - set(expected_columns)
 
     assert not missing, (
-        f"View {view_name} missing columns: {missing}\n"
-        f"Actual columns: {actual_columns}"
+        f"View {view_name} missing columns: {missing}\nActual columns: {actual_columns}"
     )
     assert not extra, (
-        f"View {view_name} has unexpected columns: {extra}\n"
-        f"Expected columns: {expected_columns}"
+        f"View {view_name} has unexpected columns: {extra}\nExpected columns: {expected_columns}"
     )
 
 
