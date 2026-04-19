@@ -7,7 +7,9 @@ Every data flow is designed as an unbounded stream, never as a batch job retrofi
 - All transaction events must be published to Kafka topics before any processing occurs  
 - No component may read directly from a source system; the broker is the single entry point  
 - Kafka topics are the system of record for raw events — downstream stores are derived views  
-- Local and cloud topologies must be functionally equivalent; Docker Compose mirrors the cloud stack 1:1
+- Local and cloud topologies must be functionally equivalent; Docker Compose mirrors the cloud stack 1:1  
+- **Producer delivery guarantee**: All Kafka producers MUST use `acks=all` and `enable.idempotence=true`; transactional producers (`beginTransaction` / `commitTransaction`) are prohibited on the hot path — the 5–20ms coordination overhead is incompatible with the 10ms ingestion budget slice  
+- **Cross-restart deduplication**: Idempotent delivery covers retries within a single producer session (PID + sequence number); cross-restart deduplication is the responsibility of the Flink `DeduplicationFilter` operator using a `KeyedProcessFunction` with a 48-hour TTL — a raw `ValueState<Set<transaction_id>>` MUST NOT be used because at high volume a per-account set grows unbounded; the implementation MUST cap memory via either (a) a timestamp-bounded `MapState<transaction_id, seen_at_ms>` that evicts entries older than the TTL on each `processElement` call, or (b) a Guava `BloomFilter` per key accepting a ≤ 0.1% false-positive rate in exchange for O(1) space; the chosen strategy must be documented in `specs/002-flink-stream-processor/`
 
 ### II. Sub-100ms Decision Budget
 The end-to-end latency from event ingestion to block/allow response must not exceed 100ms at p99.  
@@ -21,10 +23,13 @@ The end-to-end latency from event ingestion to block/allow response must not exc
 
 ### III. Schema Contract Enforcement (NON-NEGOTIABLE)
 All events crossing a topic boundary must be validated against a registered schema.  
-- Avro or Protobuf schemas are the source of truth; JSON payloads are forbidden in production topics  
-- Schema Registry is mandatory in both local and cloud environments  
+- Avro is the mandatory wire format; `fastavro` is the mandatory Python library — `avro-python3` (deprecated, 5–10× slower) and plain JSON payloads are prohibited on all production topics  
+- Schema Registry is mandatory in both local and cloud environments; schema IDs are cached in-process after the first produce — no per-message registry calls on the hot path  
 - Breaking schema changes require a new topic version (`txn.web.v2`); old consumers must be migrated before the old topic is retired  
-- Every field in the transaction event schema must have a `nullable: false` justification or an explicit nullability rationale documented in the schema
+- **Non-breaking schema additions** (adding an optional field with a default value) MUST follow Avro's backward-compatibility rule: new fields MUST declare a `default` so existing consumers can deserialise messages written by the new producer; forward-compatibility (old producer, new consumer) is achieved by the consumer ignoring unknown fields — both directions are verified by the contract tests in `tests/contract/` before any schema version is promoted to the registry  
+- The Schema Registry compatibility mode for all FraudStream subjects is set to `BACKWARD_TRANSITIVE`; any attempt to register a schema that fails this check is a build-time error, not a runtime surprise  
+- Every field in the transaction event schema must have a `nullable: false` justification or an explicit nullability rationale documented in the schema  
+- **Known drift — `txn.enriched`**: This topic currently uses JSON (v1.3 implementation). Migration to Avro is a constitution-compliance task tracked in `specs/002-flink-stream-processor/`; JSON is tolerated on this topic only until the **v2.0 production promotion milestone** — this is a hard deadline, not a rolling exception. If v2.0 ships with `txn.enriched` still in JSON, the release is blocked. All other topics are Avro-only with no exceptions
 
 ### IV. Channel Isolation
 Each transaction source (POS, web, mobile, API) is treated as an independent channel with its own topic, enrichment job, and threshold configuration.  
@@ -37,30 +42,35 @@ Each transaction source (POS, web, mobile, API) is treated as an independent cha
 The scoring pipeline always applies a deterministic rule engine before invoking the ML model.  
 - Rules are fast, auditable, and explainable; they catch known fraud patterns with zero inference cost  
 - The ML model scores only events that pass the rule engine (no obvious fraud) or are flagged for soft review  
-- If the ML serving layer is unavailable, the rule engine alone issues the decision — the pipeline never stalls or passes events silently  
-- Rule changes require a unit test proving the new rule fires on a crafted fraudulent event and does not fire on a crafted legitimate event
+- If the ML serving layer is unavailable, the rule engine alone issues the decision — the pipeline never stalls or passes events silently; the circuit breaker MUST open within **3 consecutive failed inference calls or 5 seconds of sustained failure**, whichever comes first, and MUST be verified by an integration test that kills the model server and asserts rule-only decisions are issued within that window  
+- Rule changes require a unit test proving the new rule fires on a crafted fraudulent event and does not fire on a crafted legitimate event  
+- **Rule configuration**: Rules are defined in `rules/rules.yaml` and loaded by `RuleLoader` at job startup with full Pydantic validation; an invalid YAML is fatal — the job refuses to start rather than silently using defaults  
+- **Operational rule promotion/demotion**: The Management API (`POST /rules/{rule_id}/promote`, `POST /rules/{rule_id}/demote`) is the only permitted mechanism for changing rule mode at runtime without a job restart; direct file edits require a restart  
+- **Hot-reload (PLANNED — v2)**: Rule updates via `txn.rules.config` Kafka topic (compacted, one record per rule ID) are deferred to Phase 2; until then, threshold changes require a `RuleLoader` reload triggered via the Management API or a job restart
 
 ### VI. Immutable Event Log
 Raw events are never mutated or deleted after they reach the event store.  
 - Apache Iceberg tables are append-only; `UPDATE` and `DELETE` operations on raw event tables are prohibited  
 - All enrichment and decisions are stored in separate derived tables, joined by `transaction_id`  
 - The event store is the source of truth for model retraining, audit, and dispute resolution  
-- Retention policy: raw events retained for 7 years (regulatory minimum); hot store (Redis) TTL is 24 hours
-- **Operational review store (narrow exception)**: A PostgreSQL `fraud_alerts` table is permitted as a secondary operational store for alert review status (`pending` / `confirmed-fraud` / `false-positive`) and reviewer workflow. This is NOT the event store — it holds mutable review state only, not raw events. It MUST NOT be used as a substitute for Iceberg for any analytics or training query. Schema: `transaction_id` (PK), `account_id`, `matched_rule_names` (array), `severity`, `evaluation_timestamp`, `status`, `reviewed_by` (nullable), `reviewed_at` (nullable).
+- Retention policy: raw events retained for 7 years (regulatory minimum); hot store (Redis) TTL is 24 hours  
+- **Operational review store (narrow exception)**: A PostgreSQL `fraud_alerts` table is permitted as a secondary operational store for alert review status (`pending` / `confirmed-fraud` / `false-positive`) and reviewer workflow. This is NOT the event store — it holds mutable review state only, not raw events. It MUST NOT be used as a substitute for Iceberg for any analytics or training query. Schema: `transaction_id` (PK), `account_id`, `matched_rule_names` (array), `severity`, `evaluation_timestamp`, `status`, `reviewed_by` (nullable), `reviewed_at` (nullable)
 
 ### VII. PII Minimization at the Edge
 Sensitive fields are masked at the Kafka producer, before the event enters any pipeline component.  
 - Card numbers: store only last 4 digits + BIN (first 6); full PANs are never written to any topic or store  
 - IP addresses: truncate to /24 subnet for storage; full IP used only transiently during enrichment  
 - No component downstream of the producer may reconstruct a full PAN or full IP  
-- PII masking logic lives in a shared library, versioned and tested independently of producers
+- PII masking logic lives in a shared library (`pipelines/ingestion/shared/pii_masker/`), versioned and tested independently of producers
 
 ### VIII. Observability as a First-Class Concern
 Every pipeline component emits structured logs, metrics, and traces; silent failures are forbidden.  
 - Metrics: throughput (events/sec), latency (p50/p95/p99), fraud rate, block rate, DLQ depth  
 - Logs: structured JSON, minimum fields — `transaction_id`, `component`, `timestamp`, `level`, `message`  
 - Traces: distributed trace spanning ingestion → enrichment → scoring → decision (OpenTelemetry)  
-- A dead letter queue (DLQ) topic exists for each pipeline stage; DLQ depth > 0 triggers an alert within 60 seconds
+- A dead letter queue (DLQ) topic exists for each pipeline stage; DLQ depth > 0 triggers an alert within 60 seconds  
+- **PyFlink metrics constraint**: PyFlink TaskManager workers are JVM-spawned and cannot share Python `prometheus_client` registry objects with the main-process HTTP server. Metrics are bridged via two daemon consumer threads inside the job process consuming `txn.fraud.alerts` and `txn.enriched` — this introduces ~100–500ms metric lag. `PyFlink MetricGroup`, `PROMETHEUS_MULTIPROC_DIR`, and push gateway are all prohibited as they do not work correctly in this topology  
+- **Metrics endpoint**: The job exposes Prometheus metrics at `:8002/metrics`; this endpoint is the authoritative scrape target for Prometheus
 
 ### IX. Analytics-First Persistence (NON-NEGOTIABLE)
 Every enriched transaction and every fraud decision MUST be durably persisted to the event store and made queryable by downstream analytics, ML training, and audit consumers — the streaming pipeline is not a black box.  
@@ -69,14 +79,15 @@ Every enriched transaction and every fraud decision MUST be durably persisted to
 - **Feature materialization**: Computed velocity, geolocation, and device fingerprint features MUST be materialized to the Feast feature store on every enrichment cycle, making them available for both online serving (low-latency lookup during inference) and offline training (point-in-time correct feature snapshots)  
 - **Analytics query layer**: An always-on SQL query engine (Trino locally; Athena/BigQuery in cloud) MUST be able to join `enriched_transactions` and `fraud_decisions` on `transaction_id` without requiring custom code — schema evolution in Iceberg tables follows the same Schema Registry versioning discipline as Kafka topics  
 - **No analytics-only writes to Kafka**: Iceberg is the analytics source of truth; ad-hoc analytics pipelines MUST NOT re-consume raw Kafka topics as a substitute for a missing persistence layer  
-- **Write latency budget**: Iceberg sink writes MUST complete within 5 seconds of the Kafka consumer receipt — this is outside the 100 ms scoring hot path and MUST NOT add latency to the decision response
+- **Write latency budget**: Iceberg sink writes MUST complete within 5 seconds of the Kafka consumer receipt — this is outside the 100ms scoring hot path and MUST NOT add latency to the decision response
 
 ### X. Analytics Consumer Layer
 A dedicated, independent consumer component owns all reporting and interactive analytics — it is strictly read-only relative to the pipeline and MUST NOT influence any scoring or enrichment decision.  
 
 **Data sources (dual-mode):**
-- **Real-time feed** — Kafka consumer on `txn.decisions` for live dashboards (sub-second event visibility); consumer group `analytics.dashboard` with `auto.offset.reset = latest`  
-- **Historical store** — Trino queries over `iceberg.enriched_transactions` and `iceberg.fraud_decisions` for reports, drill-down, and ML audit
+- **Real-time feed** — Kafka consumer on `txn.fraud.alerts` for live dashboards (sub-second event visibility); consumer group `analytics.dashboard` with `auto.offset.reset = latest`  
+- **Historical store** — Trino queries over `iceberg.enriched_transactions` and `iceberg.fraud_decisions` for reports, drill-down, and ML audit  
+- **Note**: `txn.decisions` is a planned topic (see Kafka Topic Inventory). Until it is built, the real-time feed consumes `txn.fraud.alerts` as the live decision signal
 
 **Reporting tools hierarchy:**
 | Layer | Tool | Purpose |
@@ -195,17 +206,19 @@ Partitioned by `decision_time` (daily). `transaction_id` is the deduplication ke
 
 ### Kafka Topic Inventory
 
-| Topic | Producer | Consumer(s) | Purpose |
-|---|---|---|---|
-| `txn.pos` | POS ingestion producer | Flink enrichment job | Raw POS transaction events |
-| `txn.web` | Web ingestion producer | Flink enrichment job | Raw web transaction events |
-| `txn.mobile` | Mobile ingestion producer | Flink enrichment job | Raw mobile transaction events |
-| `txn.api` | API ingestion producer | Flink enrichment job | Raw API transaction events |
-| `txn.*.dlq` | Ingestion producers | On-call / DLQ inspector | Dead-letter events per channel |
-| `txn.enriched` | Flink enrichment job | Rule evaluator, scoring engine, analytics consumer | Enriched transactions with velocity, geo, device features |
-| `txn.fraud.alerts` | Rule evaluator (Flink) | Operations queue, case management, analytics consumer | Structured fraud alert per flagged transaction |
-| `txn.decisions` | Scoring engine | Analytics consumer (`analytics.dashboard`) | Final ALLOW/FLAG/BLOCK decisions with fraud score |
-| `txn.rules.config` | Rule config UI (Streamlit v2) | Rule evaluator (Flink) | Rule definition updates — compacted topic, one record per rule ID |
+| Topic | Producer | Consumer(s) | Purpose | Status |
+|---|---|---|---|---|
+| `txn.api` | API ingestion producer | Flink enrichment job | Raw API transaction events (primary channel in v1) | Live |
+| `txn.pos` | POS ingestion producer | Flink enrichment job | Raw POS transaction events | Planned |
+| `txn.web` | Web ingestion producer | Flink enrichment job | Raw web transaction events | Planned |
+| `txn.mobile` | Mobile ingestion producer | Flink enrichment job | Raw mobile transaction events | Planned |
+| `txn.api.dlq` | Ingestion producer | On-call / DLQ inspector | Schema validation failures at ingestion | Live |
+| `txn.processing.dlq` | Flink enrichment job | On-call / DLQ inspector | Processing errors from enrichment job | Live |
+| `txn.enriched` | Flink enrichment job | Rule evaluator, scoring engine, analytics consumer | Enriched transactions — **JSON (known drift, migration to Avro pending)** | Live |
+| `txn.fraud.alerts` | Rule evaluator (Flink) | Operations queue, case management, analytics consumer | Structured fraud alert per flagged transaction — Avro | Live |
+| `txn.fraud.alerts.dlq` | Alert Kafka sink | On-call / DLQ inspector | Alert Kafka delivery failures | Live |
+| `txn.decisions` | Scoring engine | Analytics consumer (`analytics.dashboard`) | Final ALLOW/FLAG/BLOCK decisions with fraud score | **Planned** |
+| `txn.rules.config` | Rule config UI (Streamlit v2) | Rule evaluator (Flink) | Rule definition updates — compacted topic, one record per rule ID | **Planned — v2** |
 
 ---
 
@@ -222,27 +235,33 @@ Partitioned by `decision_time` (daily). `transaction_id` is the deduplication ke
 ## Technology Stack
 
 ### Local (development / CI)
-| Role | Tool |
-|---|---|
-| Message broker | Apache Kafka (Docker) |
-| Schema registry | Confluent Schema Registry (Docker) |
-| Stream processing | Apache Flink (local mode) or Kafka Streams |
-| Hot store | Redis (Docker) |
-| Event store | MinIO + Apache Iceberg |
-| Feature store | Feast (local SQLite backend) |
-| Analytics query engine | Trino (Docker) — data team bulk queries and >7-day scans over Iceberg on MinIO |
-| In-process analytics | DuckDB (`duckdb-iceberg` extension) — Streamlit session queries, interactive drilldown, <7-day scans |
-| Analytics UI | Streamlit (Docker) — live dashboard + historical reports |
-| BI (optional) | Apache Superset (Docker) — self-serve SQL dashboards |
-| ML serving | MLflow local server / ONNX Runtime |
-| Orchestration | Docker Compose + Makefile |
-| Observability | Prometheus + Grafana (Docker) |
+
+Services are tiered. **Core** services start with `make bootstrap` and are required for unit tests, integration tests, and the scoring hot path. **Analytics** services are opt-in (`make analytics-up`) and required only when working on Principle IX/X features. **Optional** services are never started by default.
+
+| Role | Tool | Tier | Notes |
+|---|---|---|---|
+| Message broker | Apache Kafka (KRaft, Docker) | **Core** | Single-broker, no Zookeeper |
+| Schema registry | Confluent Schema Registry (Docker) | **Core** | `:8081` |
+| Stream processing | **PyFlink 2.x DataStream API** | **Core** | Java Flink and Bytewax both rejected — see Design Decisions §1 |
+| State backend | **RocksDB (`EmbeddedRocksDBStateBackend`, incremental)** | **Core** | Heap backend rejected — see Design Decisions §2 |
+| PostgreSQL | PostgreSQL (Docker) | **Core** | `fraud_alerts` operational store only |
+| Observability | Prometheus + Grafana (Docker) | **Core** | Metrics at `:8002/metrics`, dashboards at `:3000` |
+| Hot store | Redis (Docker) | **Core** | 24h TTL on all velocity keys |
+| Event store | MinIO + Apache Iceberg | **Analytics** | S3-compatible; Flink checkpoints also stored here |
+| Analytics query engine | Trino (Docker) | **Analytics** | Bulk queries and >7-day scans over Iceberg on MinIO |
+| In-process analytics | DuckDB (`duckdb-iceberg` extension) | **Analytics** | Streamlit session queries, interactive drilldown, <7-day scans |
+| Analytics UI | Streamlit (Docker) | **Analytics** | Live dashboard + historical reports |
+| Feature store | Feast (local SQLite backend) | **Analytics** | |
+| GeoIP | MaxMind GeoLite2-City (embedded) | **Core** | Refreshed weekly via `geoip-refresh.yml` — see Design Decisions §6 |
+| Orchestration | Docker Compose + Makefile | **Core** | `make bootstrap` = Core only; `make analytics-up` adds Analytics tier |
+| BI | Apache Superset (Docker) | **Optional** | Self-serve SQL dashboards — never started by default |
 
 ### Cloud (staging / production)
 | Role | Tool |
 |---|---|
 | Message broker | Confluent Cloud · AWS MSK · GCP Pub/Sub |
-| Stream processing | Flink on Kubernetes · AWS Kinesis Data Analytics |
+| Stream processing | PyFlink on Kubernetes |
+| State backend | RocksDB + incremental checkpoints to S3/GCS |
 | Hot store | AWS ElastiCache (Redis) · Aerospike |
 | Event store | S3/GCS + Apache Iceberg · Delta Lake |
 | Feature store | Feast on K8s · Hopsworks · Tecton |
@@ -255,78 +274,182 @@ Partitioned by `decision_time` (daily). `transaction_id` is the deduplication ke
 
 ### Prohibited technology choices
 - Batch-only orchestrators (Airflow DAGs) for the scoring path — streaming pipeline only  
-- Mutable OLTP databases (Postgres, MySQL) as the primary event store  
+- Mutable OLTP databases (Postgres, MySQL) as the primary event store — PostgreSQL is permitted only for the `fraud_alerts` operational review store (Principle VI exception)  
 - Synchronous HTTP calls between pipeline components during the scoring hot path  
-- Any ML framework that cannot serve inference in < 30ms at p99 on target hardware
+- Any ML framework that cannot serve inference in < 30ms at p99 on target hardware  
+- `avro-python3` (deprecated) — `fastavro` only  
+- `AvroProducer` (legacy Confluent client) — use the current `confluent-kafka` producer with manual Avro serialisation  
+- Re-consuming raw Kafka topics for analytics purposes — Iceberg is the analytics source of truth  
+- `HashMapStateBackend` (heap) for velocity state — use RocksDB to avoid JVM heap exhaustion at scale  
+- `SlidingEventTimeWindows` for velocity aggregation — use `MapState<minute_bucket>` (see Design Decisions §3)
 
 ---
 
 ## Repository Structure
 
 ```
-fraud-detection-streaming/
-├── infra/
-│   ├── docker-compose.yml        # local full stack
-│   ├── docker-compose.dev.yml    # lightweight dev override
-│   └── terraform/                # cloud modules (VPC, MSK, EKS, S3, ElastiCache)
-├── pipelines/
-│   ├── ingestion/                # Kafka producers, schema definitions, PII masking lib
-│   ├── processing/               # Flink jobs, feature engineering, velocity aggregations
-│   └── scoring/                  # rule engine, ML model client, decision publisher
-├── models/
-│   ├── training/                 # offline training notebooks, feature selection
-│   └── serving/                  # MLflow / ONNX serving wrapper, version registry
-├── storage/
-│   ├── feature_store/            # Feast repo, feature views, data sources, materialization jobs
-│   └── lake/                     # Iceberg table definitions, schema migrations, Trino catalog config
+fraudstream/                          # github.com/LucasMadrid/fraudstream
+├── .claude/
+│   └── commands/                     # Claude Code slash commands for this project
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                    # unit tests → integration tests → coverage gate (80%)
+│       ├── geoip-refresh.yml         # on-demand GeoIP database refresh
+│       └── weekly-geoip-refresh.yml  # scheduled weekly GeoIP refresh
+├── .specify/                         # Specify design tokens (if applicable)
+├── alertmanager/                     # Alertmanager config
 ├── analytics/
-│   ├── app/                      # Streamlit app (pages: live feed, fraud rate, rules, DLQ inspector)
+│   ├── app/
 │   │   ├── pages/
-│   │   │   ├── 1_live_feed.py    # real-time Kafka consumer dashboard
-│   │   │   ├── 2_fraud_rate.py   # historical Trino → Iceberg reports
-│   │   │   ├── 3_rule_triggers.py# rule leaderboard and false-positive analysis
-│   │   │   ├── 4_model_compare.py# fraud score distribution per model version
-│   │   │   └── 5_dlq_inspector.py# dead-letter queue browser
-│   │   └── Home.py               # entry point, shared Kafka/Trino client init
-│   ├── consumers/                # Kafka consumer wrapper (group: analytics.dashboard)
-│   ├── queries/                  # Trino SQL query library (parameterized, versioned)
-│   └── reports/                  # scheduled report definitions (cron + Trino queries)
+│   │   │   ├── 1_live_feed.py        # real-time Kafka consumer dashboard
+│   │   │   ├── 2_fraud_rate.py       # historical Trino → Iceberg reports
+│   │   │   ├── 3_rule_triggers.py    # rule leaderboard and false-positive analysis
+│   │   │   ├── 4_model_compare.py    # fraud score distribution per model version
+│   │   │   └── 5_dlq_inspector.py    # dead-letter queue browser
+│   │   └── Home.py                   # entry point, shared Kafka/Trino client init
+│   ├── consumers/                    # Kafka consumer wrapper (group: analytics.dashboard)
+│   ├── queries/                      # Trino SQL query library (parameterized, versioned)
+│   └── reports/                      # scheduled report definitions (cron + Trino queries)
+├── docs/                             # Architecture diagrams, ADRs
+├── infra/
+│   ├── docker-compose.yml            # full local stack
+│   ├── flink/
+│   │   ├── Dockerfile                # PyFlink + scoring extras image
+│   │   ├── flink-conf.yaml           # RocksDB, checkpoint dir, Arrow bundle config
+│   │   └── alerts.yaml               # Flink-level Prometheus alert rules
+│   ├── grafana/
+│   │   └── provisioning/             # auto-provisioned datasource + fraud dashboard
+│   ├── kafka/
+│   │   └── topics.sh                 # topic creation + Avro schema registration
+│   ├── postgres/
+│   │   └── migrations/
+│   │       └── 001_create_fraud_alerts.sql
+│   ├── prometheus/
+│   │   ├── prometheus.yml            # scrape config
+│   │   └── alerts/
+│   │       └── fraud_rule_engine.yml # FraudFlagRateZero + DLQDepthHigh
+│   └── geoip/                        # GeoLite2-City.mmdb (gitignored; make update-geoip)
 ├── monitoring/
-│   ├── dashboards/               # Grafana JSON (latency, DLQ depth, throughput — ops metrics only)
-│   └── alerts/                   # Prometheus alerting rules
+│   ├── dashboards/                   # Grafana JSON (ops metrics: latency, DLQ, throughput)
+│   └── alerts/                       # Prometheus alerting rules
+├── pipelines/
+│   ├── ingestion/                    # Feature 001 — Kafka producer
+│   │   ├── api/                      # producer entry point, metrics, telemetry
+│   │   └── shared/
+│   │       ├── pii_masker/           # PAN masking (BIN + last-4 + Luhn validation)
+│   │       └── schema_registry.py    # Schema Registry client wrapper
+│   ├── processing/                   # Feature 002 — PyFlink enrichment job
+│   │   ├── operators/                # VelocityEnrichment, GeolocationMapFunction,
+│   │   │                             #   DeviceProcessFunction, EnrichedRecordAssembler
+│   │   └── shared/
+│   │       ├── avro_serde.py         # Avro deserialisation + schema validation
+│   │       └── dlq_sink.py           # DLQ record builder
+│   └── scoring/                      # Feature 003 — Fraud rule engine
+│       ├── rules/
+│       │   ├── families/             # velocity.py, new_device.py, impossible_travel.py
+│       │   ├── models.py             # Pydantic rule models (RuleConfig, RuleConditions)
+│       │   ├── loader.py             # RuleLoader — reads rules.yaml at startup
+│       │   └── evaluator.py          # FraudRuleEvaluator — stateless Flink MapFunction
+│       └── sinks/
+│           ├── alert_kafka.py        # AlertKafkaSink — Avro → txn.fraud.alerts
+│           └── alert_postgres.py     # AlertPostgresSink — INSERT INTO fraud_alerts
+├── rules/
+│   └── rules.yaml                    # live rule set — edit thresholds here
+├── scripts/
+│   └── generate_transactions.py      # traffic generator + suspicious injection
+├── specs/                            # per-feature specs (authoritative per-feature ADRs)
+│   ├── 001-kafka-ingestion-pipeline/
+│   ├── 002-flink-stream-processor/
+│   ├── 003-fraud-rule-engine/
+│   └── 004-operational-excellence/   # in progress
+├── storage/
+│   ├── feature_store/                # Feast repo, feature views, data sources
+│   └── lake/                         # Iceberg table definitions, schema migrations
 ├── tests/
-│   ├── unit/                     # per-component unit tests
-│   ├── integration/              # testcontainers-based end-to-end tests
-│   └── load/                     # k6 / Locust latency benchmarks
+│   ├── unit/                         # per-component unit tests (330+ tests, 80% gate)
+│   ├── integration/                  # testcontainers-based end-to-end tests
+│   ├── contract/                     # Avro schema contract tests
+│   └── load/                         # throughput + memory benchmarks
+├── CLAUDE.md                         # runtime development guidance for Claude Code
+├── Makefile                          # all project targets (bootstrap, flink-job, test, etc.)
+├── pyproject.toml                    # Python dependencies and project metadata
 └── README.md
 ```
 
 ---
 
+## Design Decisions
+
+These decisions are architectural law — they represent choices made with full awareness of the alternatives. Revisiting them requires the same amendment process as a Core Principle change.
+
+### DD-1. Stream processing runtime — PyFlink 2.x DataStream API
+**Rejected**: Java Flink operators (abandons Python 3.11 ML toolchain; Java expertise not available), Bytewax (no production-grade exactly-once in v0.x; no incremental checkpoint support).  
+**Tradeoff accepted**: Every `state.value()` / `state.update()` call crosses a JVM–Python boundary via Unix socket (Beam Fn API). Arrow batching (`bundle.size=1000`, `bundle.time=15ms`) amortises overhead to ~10–50µs per record at throughput.
+
+### DD-2. State backend — RocksDB + incremental checkpoints
+**Rejected**: `HashMapStateBackend` (heap) — velocity state for millions of accounts exhausts JVM heap; no disk-spillover. Full checkpoints — at 200–800 MB state, full snapshots take 30–120s and violate the 30s checkpoint timeout.  
+**Tradeoff accepted**: RocksDB introduces ~2–5× read latency vs heap for `state.value()`. Mitigated by keeping hot account state in RocksDB's block cache. Incremental checkpoints require maintaining a chain of ≥ 3 snapshots — deleting intermediate ones breaks recovery.
+
+### DD-3. Velocity windows — `MapState<minute_bucket>` over sliding event-time windows
+**Rejected**: `SlidingEventTimeWindows(24h, 1min)` — creates 1,440 panes; each event copied into all panes — O(window/slide) memory and CPU. `ListState<(timestamp, amount)>` — O(N) full scan per event.  
+**Tradeoff accepted**: Custom watermark eviction logic required (timer per account). Late events within allowed-lateness window are handled by re-firing `process_element` on the correct bucket.
+
+### DD-4. Serialisation — Avro (`fastavro`) over Protobuf and JSON
+**Rejected**: Protobuf (no native Confluent Schema Registry integration), JSON (no schema enforcement; 3–5× larger payloads), `avro-python3` (deprecated; 5–10× slower), `AvroProducer` legacy client (deprecated; wraps `avro-python3`).  
+**Tradeoff accepted**: Avro binary requires a schema registry sidecar. Schema IDs are cached in-process after the first produce.
+
+### DD-5. Kafka producer guarantees — `acks=all` + idempotent
+**Rejected**: `acks=1` (leader failover can lose the last unreplicated batch — a lost fraud event is a regulatory liability). Transactional producer (5–20ms per record — incompatible with 10ms budget slice).  
+**Tradeoff accepted**: `acks=all` adds ~1–2ms round-trip per batch. Cross-restart deduplication is handled by Flink `DeduplicationFilter` with a 48h TTL — not by Kafka offset management alone.  
+**Memory constraint**: A naive `ValueState<Set<transaction_id>>` grows unbounded at high volume (a busy account with 10 txn/min over 48h accumulates ~28,800 IDs in state). The implementation MUST use timestamp-bounded eviction (`MapState<transaction_id, seen_at_ms>` with per-element eviction on `processElement`) or a probabilistic bloom filter (≤ 0.1% false-positive rate). The chosen approach must include a memory budget estimate in `specs/002-flink-stream-processor/`.
+
+### DD-6. GeoIP lookup — embedded MaxMind reader + LRU cache
+**Rejected**: External GeoIP HTTP API (5–50ms network round-trip in hot path), re-open reader per record (file descriptor exhaustion).  
+**Tradeoff accepted**: GeoLite2-City MMDB (~70 MB) must be distributed to every Flink TaskManager (mounted via Docker volume). Refreshes require a job restart. Automated weekly refresh via `.github/workflows/weekly-geoip-refresh.yml`. Lookup latency ~5–20µs with `maxminddb-c` C extension; ~0µs on LRU cache hit for repeated /24 subnets.
+
+### DD-7. Fraud rule configuration — YAML file + Pydantic validation
+**Rejected**: Hardcoded thresholds (threshold changes require full deploy), database-backed rules (runtime dependency; query latency in hot path), Kafka-consumed rule updates (deferred to v2 as TD-001).  
+**Tradeoff accepted**: Rule threshold changes require a job restart unless applied via the Management API promote/demote endpoints. `RuleConfigError` on invalid YAML is fatal.
+
+### DD-8. Alert persistence — dual-sink (Kafka + PostgreSQL)
+**Rejected**: Kafka-only (no queryable store for fraud ops; `status` lifecycle requires a DB), PostgreSQL-only (no downstream consumers without re-publishing), exactly-once Kafka delivery (2PC coordination adds significant latency).  
+**Tradeoff accepted**: `AT_LEAST_ONCE` delivery means duplicate alerts are possible on Flink recovery. `ON CONFLICT (transaction_id) DO NOTHING` absorbs duplicates at the DB level.
+
+### DD-9. Metrics bridge — daemon consumer threads
+**Rejected**: `PyFlink MetricGroup` (Python metric objects not shared with main-process HTTP server — JVM workers and Python driver have separate `prometheus_client` registries), `PROMETHEUS_MULTIPROC_DIR` (PyFlink workers are JVM-spawned and do not write `.db` files to the multiprocess dir), push gateway (stateful middleman; aggregation semantics differ).  
+**Tradeoff accepted**: ~100–500ms metric lag between a rule firing and the counter being visible in Prometheus. Acceptable for operational dashboards; not suitable for sub-second alerting.
+
+---
+
 ## Non-Negotiables (Pre-Production Checklist)
 
-- [ ] Idempotent consumers — deduplication on `transaction_id` handles Kafka redeliveries without double-blocking
+- [ ] Idempotent consumers — `DeduplicationFilter` uses timestamp-bounded eviction or bloom filter (NOT raw `ValueState<Set>`); memory budget documented in specs; tested under Flink recovery
 - [ ] Dead letter queue per stage — no event is silently dropped; DLQ depth alert fires in < 60s
 - [ ] Model versioning — every deployed model carries a tagged version; previous version stays live for instant rollback
-- [ ] Circuit breaker on ML service — rule engine fallback is active and tested before any ML deployment
-- [ ] PII masking — full PAN and full IP never reach any topic; verified by automated integration test
+- [ ] Circuit breaker on ML service — breaker opens within 3 consecutive failures or 5 seconds, verified by integration test that kills the model server and confirms rule-only decisions resume within that window
+- [ ] PII masking — full PAN and full IP never reach any topic; Luhn validation enforced; verified by automated integration test
 - [ ] Latency budget test — p99 < 100ms verified under 2× expected peak load before promotion to production
 - [ ] Schema migration plan — every schema change ships with a consumer migration guide and a deprecation date for the old topic
 - [ ] Fraud rate baseline — 24-hour rolling mean established in staging; production alert fires on > 3σ deviation
-- [ ] Every component should be tested at least 80% code coverage
+- [ ] Every component tested at ≥ 80% code coverage — enforced by CI gate
 - [ ] Analytics sink verified — `iceberg.enriched_transactions` and `iceberg.fraud_decisions` tables queryable via Trino/Athena before production promotion; row count must match Kafka topic offset within 0.1%
-- [ ] Feast materialization verified — feature values for a test account are retrievable from the online store within 5 seconds of the enrichment event being published to Kafka
+- [ ] Feast materialization verified — feature values for a test account retrievable from online store within 5 seconds of enrichment event published to Kafka
 - [ ] Point-in-time correctness — offline Feast feature snapshots for a replayed event sequence match the values observed at enrichment time (no future leakage)
 - [ ] Analytics consumer isolation verified — `analytics.dashboard` consumer group offset does not interfere with scoring or processing consumer groups under load
-- [ ] Streamlit live feed lag — real-time dashboard reflects a new decision within 2 seconds of it being published to `txn.decisions` under normal load
-- [ ] Streamlit historical report accuracy — fraud rate figures from Streamlit/Trino match the figures from a direct Iceberg table scan for the same time window (zero discrepancy)
+- [ ] Streamlit live feed lag — real-time dashboard reflects a new alert within 2 seconds of it being published to `txn.fraud.alerts` under normal load
+- [ ] Streamlit historical report accuracy — fraud rate figures from Streamlit/Trino match figures from a direct Iceberg table scan for the same time window (zero discrepancy)
 - [ ] Analytics service failure isolation — taking down the Streamlit service and Trino container has zero effect on fraud scoring latency and throughput SLOs
+- [ ] Management API secured — `MANAGEMENT_API_KEY` set in all non-dev environments; rate limits verified under load
+- [ ] GeoIP database current — `GeoLite2-City.mmdb` present and < 30 days old before any production deployment
+- [ ] Schema compatibility mode — Schema Registry compatibility set to `BACKWARD_TRANSITIVE` for all FraudStream subjects; verified before first production topic registration
+- [ ] Non-breaking schema additions tested — `tests/contract/` passes for both backward (new producer, old consumer) and forward (old producer, new consumer) directions before any schema version is promoted
+- [ ] `txn.enriched` Avro migration complete — JSON drift resolved; topic produces Avro before v2.0 production promotion (hard deadline per Principle III)
 
 ---
 
 ## Governance
 
-This constitution supersedes all other architectural decisions, ADRs, and team conventions for the FraudStream project. Any component, PR, or design that conflicts with a Core Principle is blocked until resolved.
+This constitution supersedes all other architectural decisions, ADRs, and team conventions for the FraudStream project. Any component, PR, or design that conflicts with a Core Principle is blocked until resolved. Per-feature specs live in `specs/` and are authoritative for implementation detail; the constitution governs cross-cutting principles only.
 
 **Amendments** require:
 1. A written rationale explaining why the principle is insufficient
@@ -334,8 +457,8 @@ This constitution supersedes all other architectural decisions, ADRs, and team c
 3. Approval from at least two senior engineers and the data engineering lead
 4. A migration plan with a completion date before the amendment takes effect
 
-All pull requests must include a checklist item confirming compliance with the relevant principle(s). Complexity must be justified — if a simpler approach meets the latency budget and data contract requirements, the simpler approach wins.
+All pull requests must include a checklist item confirming compliance with the relevant principle(s). Complexity must be justified — if a simpler approach meets the latency budget and data contract requirements, the simpler approach wins. For runtime development guidance used by Claude Code, refer to `CLAUDE.md`.
 
 ---
 
-**Version**: 1.3.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-03
+**Version**: 1.5.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-18

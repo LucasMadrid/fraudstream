@@ -99,3 +99,23 @@ class FraudAlertRecord:
     severity: str
     evaluation_timestamp: int
     status: str = "pending"
+
+
+@dataclass(frozen=True)
+class FraudDecision:
+    """Permanent record of every fraud scoring decision written to
+    iceberg.fraud_decisions.
+
+    Persisted for every ALLOW/FLAG/BLOCK outcome. Never dropped.
+    fraud_score is in [0.0, 1.0]. rule_triggers is empty list (not null) when
+    no rules fired.
+    """
+
+    transaction_id: str
+    decision: Literal["ALLOW", "FLAG", "BLOCK"]
+    fraud_score: float
+    rule_triggers: list[str]
+    model_version: str
+    decision_time_ms: int
+    latency_ms: float
+    schema_version: str = "1"

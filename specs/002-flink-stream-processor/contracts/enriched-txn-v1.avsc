@@ -207,6 +207,18 @@
       "doc": "True if any prior transaction from this device was labelled fraudulent. NOT YET WIRED IN V1 — always null. Consumers MUST treat null as 'not evaluated' (TD-002). DO NOT coerce null to false: null does not mean the device is known-clean. Null if api_key_id absent or in v1. nullable: true."
     },
     {
+      "name": "prev_geo_country",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "ISO 3166-1 alpha-2 country code from the PREVIOUS transaction on this device (api_key_id). Null on first transaction per device or if api_key_id absent. Enables cross-transaction geo-velocity features. BACKWARD_TRANSITIVE: default null required. nullable: true."
+    },
+    {
+      "name": "prev_txn_time_ms",
+      "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}],
+      "default": null,
+      "doc": "Event timestamp (epoch ms) of the previous transaction on this device (api_key_id). Null on first transaction per device or if api_key_id absent. Used to compute time-since-last-transaction velocity features. BACKWARD_TRANSITIVE: default null required. nullable: true."
+    },
+    {
       "name": "enrichment_time",
       "type": {
         "type": "long",

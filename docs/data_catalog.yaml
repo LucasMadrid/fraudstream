@@ -1,0 +1,355 @@
+# FraudStream Data Catalog
+# Auto-generated from data-model.md specifications
+# Last updated: 2026-04-18
+# Version: 1.0.0
+
+tables:
+  enriched_transactions:
+    description: >
+      Append-only Iceberg table of all enriched transaction records. Contains
+      velocity, geolocation, and device fingerprint features computed by the
+      PyFlink enrichment job. PCI-DSS in scope due to card_bin and card_last4.
+    partition: days(event_time)
+    dedup_key: transaction_id
+    retention_years: 7
+    pci_in_scope: true
+    owner: platform-engineering
+    consumers:
+      - fraud-analysts
+      - data-scientists
+      - audit-team
+    fields:
+      transaction_id:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: UUID v4 transaction identifier. Deduplication and join key.
+        lineage: upstream:txn.api → unchanged
+      account_id:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Account identifier. Kafka partition key for co-partitioned consumers.
+        lineage: upstream:txn.api → unchanged
+      merchant_id:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Merchant identifier.
+        lineage: upstream:txn.api → unchanged
+      amount:
+        type: DECIMAL(18,4)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Transaction amount. DECIMAL(18,4) — 4 decimal places for financial precision.
+        lineage: upstream:txn.api → unchanged
+      currency:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: ISO-4217 currency code.
+        lineage: upstream:txn.api → unchanged
+      event_time:
+        type: TIMESTAMP(6)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Original event timestamp from API producer. Partition key for daily partitions.
+        lineage: upstream:txn.api → unchanged
+      enrichment_time:
+        type: TIMESTAMP(6)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Wall-clock timestamp when the Iceberg sink flushed this record.
+        lineage: computed:iceberg_sink → set at flush
+      channel:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: "Transaction channel. Values: POS, WEB, MOBILE, API."
+        lineage: upstream:txn.api → unchanged
+      card_bin:
+        type: STRING
+        nullable: false
+        sensitivity: PCI-DSS
+        pci: true
+        masking: partial-first-6-digits
+        masking_guarantee: masked-by-api-gateway-before-kafka
+        description: First 6 digits of PAN (BIN). Masked upstream — raw PAN never reaches pipeline.
+        lineage: upstream:txn.api → masked by api-gateway → unchanged
+      card_last4:
+        type: STRING
+        nullable: false
+        sensitivity: PCI-DSS
+        pci: true
+        masking: partial-last-4-digits
+        masking_guarantee: masked-by-api-gateway-before-kafka
+        description: Last 4 digits of PAN. Masked upstream — raw PAN never reaches pipeline.
+        lineage: upstream:txn.api → masked by api-gateway → unchanged
+      caller_ip_subnet:
+        type: STRING
+        nullable: false
+        sensitivity: PII-masked
+        pci: true
+        masking: slash-24-subnet-last-octet-zeroed
+        masking_guarantee: masking-lib-contract-enforced-by-schema-registry
+        description: /24 subnet (last octet zeroed). Masking enforced by masking-lib before Kafka write.
+        lineage: upstream:txn.api → masking-lib → unchanged
+      api_key_id:
+        type: STRING
+        nullable: false
+        sensitivity: sensitive-linkage
+        pci: false
+        masking: none-opaque-token
+        description: Opaque API key token. Enables cross-account device tracking. Not a PAN/PII value.
+        lineage: upstream:txn.api → unchanged
+      oauth_scope:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: OAuth scope string.
+        lineage: upstream:txn.api → unchanged
+      geo_lat:
+        type: FLOAT
+        nullable: true
+        sensitivity: low
+        pci: false
+        description: Raw latitude from API request. NOT derived from GeoLite2.
+        lineage: upstream:txn.api → unchanged
+      geo_lon:
+        type: FLOAT
+        nullable: true
+        sensitivity: low
+        pci: false
+        description: Raw longitude from API request. NOT derived from GeoLite2.
+        lineage: upstream:txn.api → unchanged
+      masking_lib_version:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Masking library semver. NOT NULL — absence indicates a masking pipeline failure.
+        lineage: upstream:txn.api → unchanged
+      vel_count_1m:
+        type: INT
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: "Transaction count for account in last 60 seconds (event time). Min: 1."
+        lineage: computed:velocity-operator → rolling-window-60s
+      vel_amount_1m:
+        type: DECIMAL(18,4)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Total amount for account in last 60 seconds. Native currency — no cross-currency normalisation (TD-001).
+        lineage: computed:velocity-operator → rolling-window-60s
+      vel_count_5m:
+        type: INT
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Transaction count for account in last 5 minutes (event time).
+        lineage: computed:velocity-operator → rolling-window-5m
+      vel_amount_5m:
+        type: DECIMAL(18,4)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Total amount for account in last 5 minutes.
+        lineage: computed:velocity-operator → rolling-window-5m
+      vel_count_1h:
+        type: INT
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Transaction count for account in last 1 hour (event time).
+        lineage: computed:velocity-operator → rolling-window-1h
+      vel_amount_1h:
+        type: DECIMAL(18,4)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Total amount for account in last 1 hour.
+        lineage: computed:velocity-operator → rolling-window-1h
+      vel_count_24h:
+        type: INT
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Transaction count for account in last 24 hours (event time).
+        lineage: computed:velocity-operator → rolling-window-24h
+      vel_amount_24h:
+        type: DECIMAL(18,4)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Total amount for account in last 24 hours.
+        lineage: computed:velocity-operator → rolling-window-24h
+      geo_country:
+        type: STRING
+        nullable: true
+        sensitivity: low
+        pci: false
+        description: ISO 3166-1 alpha-2 country from GeoLite2. Null if subnet unresolvable.
+        lineage: computed:geo-operator → geolite2-lookup
+      geo_city:
+        type: STRING
+        nullable: true
+        sensitivity: low
+        pci: false
+        description: City name from GeoLite2. Null if city-level precision unavailable.
+        lineage: computed:geo-operator → geolite2-lookup
+      geo_network_class:
+        type: STRING
+        nullable: true
+        sensitivity: low
+        pci: false
+        description: "Network type from GeoLite2. Values: RESIDENTIAL, BUSINESS, HOSTING, MOBILE, UNKNOWN."
+        lineage: computed:geo-operator → geolite2-lookup
+      geo_confidence:
+        type: FLOAT
+        nullable: true
+        sensitivity: low
+        pci: false
+        description: Geolocation confidence [0.0, 1.0]. 0.0 = failed lookup, 1.0 = exact.
+        lineage: computed:geo-operator → geolite2-lookup
+      device_first_seen:
+        type: TIMESTAMP(6)
+        nullable: true
+        sensitivity: internal
+        pci: false
+        description: Event time of first transaction from this device. Null if api_key_id absent.
+        lineage: computed:device-operator → stateful-per-device
+      device_txn_count:
+        type: INT
+        nullable: true
+        sensitivity: internal
+        pci: false
+        description: Lifetime transaction count for this device. Null if api_key_id absent.
+        lineage: computed:device-operator → stateful-per-device
+      device_known_fraud:
+        type: BOOLEAN
+        nullable: true
+        sensitivity: internal
+        pci: false
+        description: >
+          True if a prior transaction from this device was labelled fraudulent.
+          ALWAYS NULL IN V1 (TD-002) — feedback loop not yet wired.
+          Treat null as 'not evaluated', not as 'known clean'.
+        lineage: computed:device-operator → NOT-YET-WIRED-v1
+      prev_geo_country:
+        type: STRING
+        nullable: true
+        sensitivity: low
+        pci: false
+        description: Geo country from previous transaction on this device. Null on first transaction.
+        lineage: computed:device-operator → stateful-per-device
+      prev_txn_time_ms:
+        type: TIMESTAMP(6)
+        nullable: true
+        sensitivity: internal
+        pci: false
+        description: Event time (epoch ms) of previous transaction on this device. Null on first transaction.
+        lineage: computed:device-operator → stateful-per-device
+      enrichment_latency_ms:
+        type: INT
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Milliseconds from ingestion (processing_time) to enrichment completion.
+        lineage: computed:enricher → wall-clock-delta
+      processor_version:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: "Flink processor version string. Format: '{feature-branch}@{semver}'."
+        lineage: computed:enricher → PROCESSOR_VERSION-env-var
+      schema_version:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Schema version identifier. Default "1".
+        lineage: computed:enricher → static
+
+  fraud_decisions:
+    description: >
+      Append-only Iceberg table of every fraud scoring decision. Covers ALL outcomes:
+      ALLOW, FLAG, BLOCK. Never drop any decision. Join key to enriched_transactions
+      is transaction_id. No PCI-DSS scope — no card data stored here.
+    partition: days(decision_time_ms)
+    dedup_key: transaction_id
+    retention_years: 7
+    pci_in_scope: false
+    owner: platform-engineering
+    consumers:
+      - fraud-analysts
+      - data-scientists
+      - model-team
+    fields:
+      transaction_id:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Join key to enriched_transactions.
+        lineage: upstream:scoring-engine → unchanged
+      decision:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: "Scoring outcome. Values: ALLOW, FLAG, BLOCK."
+        lineage: computed:scoring-engine → rule-evaluation
+      fraud_score:
+        type: DOUBLE
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: ML model fraud probability [0.0, 1.0]. From MLScore.fraud_probability.
+        lineage: computed:scoring-engine → ml-model
+      rule_triggers:
+        type: ARRAY<STRING>
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Rule IDs that fired. Empty list (NOT null) when no rules matched.
+        lineage: computed:scoring-engine → rule-evaluation
+      model_version:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: ML model version string. From MLScore.model_version.
+        lineage: computed:scoring-engine → ml-model
+      decision_time_ms:
+        type: TIMESTAMP(6)
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Epoch ms when decision was made. Drives daily partition.
+        lineage: computed:scoring-engine → wall-clock
+      latency_ms:
+        type: DOUBLE
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: End-to-end latency from Kafka consumer receipt to decision.
+        lineage: computed:scoring-engine → wall-clock-delta
+      schema_version:
+        type: STRING
+        nullable: false
+        sensitivity: internal
+        pci: false
+        description: Schema version identifier. Default "1".
+        lineage: computed:scoring-engine → static

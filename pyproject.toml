@@ -26,7 +26,7 @@ dev = [
     "ruff>=0.4",
 ]
 processing = [
-    "apache-flink>=1.20",
+    "apache-flink>=2.0",
     "confluent-kafka[schema-registry]>=2.3",
     "fastavro>=1.9",
     "geoip2>=4.8",
@@ -37,7 +37,7 @@ processing = [
     "hypothesis>=6",
 ]
 scoring = [
-    "apache-flink>=1.20",
+    "apache-flink>=2.0",
     "pydantic>=2.0",
     "pyyaml",
     "psycopg2-binary",
@@ -49,6 +49,16 @@ scoring = [
     "uvicorn>=0.24",
     "pybreaker==1.4.1",
     "slowapi>=0.1.9",
+]
+analytics = [
+    "pyiceberg[pyarrow,s3fs]>=0.7",
+    "feast>=0.40",
+    "trino>=0.328",
+    "apache-flink>=2.0",
+    "confluent-kafka[schema-registry]>=2.3",
+    "fastavro>=1.9",
+    "prometheus-client>=0.20",
+    "pybreaker==1.4.1",
 ]
 
 [tool.setuptools.packages.find]
@@ -84,3 +94,8 @@ select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pipelines"]
+
+[tool.uv.extra-build-dependencies]
+apache-beam = ["setuptools", "wheel"]
+dill = ["setuptools"]
+docopt = ["setuptools"]

@@ -156,12 +156,12 @@ class TestEnrichedRecordAssembler:
             "device_known_fraud": False,
         }
 
-    def test_all_36_fields_present(self):
+    def test_all_38_fields_present(self):
         from pipelines.processing.operators.enricher import EnrichedRecordAssembler
 
         assembler = EnrichedRecordAssembler()
         record = assembler.assemble(self._make_txn(), self._velocity(), self._geo(), self._device())
-        # 36 fields per enriched-txn-v1.avsc
+        # 38 fields per enriched-txn-v1.avsc (36 original + prev_geo_country + prev_txn_time_ms)
         expected_fields = {
             "transaction_id",
             "account_id",
@@ -194,6 +194,8 @@ class TestEnrichedRecordAssembler:
             "device_first_seen",
             "device_txn_count",
             "device_known_fraud",
+            "prev_geo_country",
+            "prev_txn_time_ms",
             "enrichment_time",
             "enrichment_latency_ms",
             "processor_version",
