@@ -8,7 +8,6 @@ import re
 import sys
 from pathlib import Path
 
-
 FEATURE_FAMILIES = {
     "velocity": [
         "vel_count_1m",
@@ -51,7 +50,7 @@ def load_avro_schema(avsc_path: Path) -> dict:
     if not avsc_path.exists():
         raise FileNotFoundError(f"Schema file not found: {avsc_path}")
 
-    with open(avsc_path) as f:
+    with open(avsc_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -80,7 +79,7 @@ def check_feast_view(feast_file: Path, expected_fields: list[str]) -> list[str]:
     if not feast_file.exists():
         return expected_fields
 
-    with open(feast_file) as f:
+    with open(feast_file, encoding="utf-8") as f:
         content = f.read()
 
     missing = []

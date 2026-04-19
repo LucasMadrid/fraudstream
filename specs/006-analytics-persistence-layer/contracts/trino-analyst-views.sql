@@ -129,7 +129,7 @@ exploded AS (
         CAST(from_unixtime(decision_time_ms / 1000) AS DATE) AS decision_date,
         rule_name
     FROM decisions
-    CROSS JOIN UNNEST(rule_triggers) AS r(rule_name)
+    CROSS JOIN UNNEST(rule_triggers) AS (rule_name)
     WHERE rn = 1
 )
 SELECT

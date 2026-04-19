@@ -16,8 +16,8 @@ Data modeling strategy: Avro schemas in the Schema Registry are the canonical so
 
 ## Technical Context
 
-**Language/Version**: Python 3.11  
-**Primary Dependencies**: PyFlink 2.x DataStream API (existing), PyIceberg 0.7+ (new), Feast 0.40+ (new), fastavro (existing), trino-python-client (new, for integration tests)  
+**Language/Version**: Python 3.11
+**Primary Dependencies**: PyFlink 2.x DataStream API (existing), PyIceberg 0.11.1 (new), Feast 0.40+ (new), fastavro (existing), trino-python-client (new, for integration tests)  
 **Storage**: Apache Iceberg on MinIO (append-only analytics tables), Feast SQLite online backend (local), Feast dask offline store (local)  
 **Testing**: pytest (existing), testcontainers (existing), new integration tests for Iceberg sink, Feast materialization, Trino query contract  
 **Target Platform**: Linux container (Docker Compose Analytics tier); cloud target is S3 + Athena or BigQuery  

@@ -730,7 +730,7 @@ def test_numeric_field_normalization(sink):
 
     # Check types
     assert pa_table.schema.field("fraud_score").type == pa.float64()
-    assert pa_table.schema.field("decision_time_ms").type == pa.int64()
+    assert pa_table.schema.field("decision_time_ms").type == pa.timestamp("us")
     assert pa_table.schema.field("latency_ms").type == pa.float64()
 
     # Check normalization
