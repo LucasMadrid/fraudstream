@@ -5,7 +5,7 @@
 -- Schema version: 1
 -- Partition: event_date (DATE derived from event_time), daily
 
-CREATE TABLE IF NOT EXISTS iceberg.enriched_transactions (
+CREATE TABLE IF NOT EXISTS iceberg.default.enriched_transactions (
     -- Identity
     transaction_id      STRING          NOT NULL,   -- dedup key, partition join key
     account_id          STRING          NOT NULL,

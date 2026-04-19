@@ -506,7 +506,7 @@ def test_arrow_table_schema_correctness(sink):
             ("fraud_score", pa.float64()),
             ("rule_triggers", pa.list_(pa.string())),
             ("model_version", pa.string()),
-            ("decision_time_ms", pa.int64()),
+            ("decision_time_ms", pa.timestamp("us")),
             ("latency_ms", pa.float64()),
             ("schema_version", pa.string()),
         ]

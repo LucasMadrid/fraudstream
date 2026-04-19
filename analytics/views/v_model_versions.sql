@@ -13,7 +13,7 @@ WITH decisions AS (
 )
 SELECT
     model_version,
-    CAST(decision_time_ms AS DATE)      AS decision_date,
+    CAST(from_unixtime(decision_time_ms / 1000) AS DATE) AS decision_date,
     decision,
     COUNT(*)                            AS transaction_count,
     AVG(fraud_score)                    AS avg_fraud_score,
@@ -25,5 +25,5 @@ FROM decisions
 WHERE rn = 1
 GROUP BY
     model_version,
-    CAST(decision_time_ms AS DATE),
+    CAST(from_unixtime(decision_time_ms / 1000) AS DATE),
     decision;

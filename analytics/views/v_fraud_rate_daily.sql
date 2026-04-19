@@ -20,7 +20,7 @@ enriched AS (
     FROM iceberg.default.enriched_transactions
 )
 SELECT
-    CAST(d.decision_time_ms AS DATE)    AS decision_date,
+    CAST(from_unixtime(d.decision_time_ms / 1000) AS DATE) AS decision_date,
     e.channel,
     d.decision,
     COUNT(*)                            AS transaction_count,
@@ -33,6 +33,6 @@ JOIN enriched e
    AND e.rn = 1
 WHERE d.rn = 1
 GROUP BY
-    CAST(d.decision_time_ms AS DATE),
+    CAST(from_unixtime(d.decision_time_ms / 1000) AS DATE),
     e.channel,
     d.decision;

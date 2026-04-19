@@ -263,6 +263,10 @@ try:  # pragma: no cover
                     )
                 self._buffer.clear()
 
+        def close(self) -> None:
+            """Flush remaining buffer on task shutdown."""
+            self._flush()
+
         def _records_to_arrow_table(self, records: list[dict]) -> pa.Table:  # type: ignore[name-defined]
             """Convert list of FraudDecision records to PyArrow Table.
 
@@ -453,6 +457,10 @@ except ImportError:
                 if len(self._buffer) >= ICEBERG_DECISIONS_BUFFER_MAX:
                     _increment_counter("iceberg_decisions_buffer_overflow_total")
                 self._buffer.clear()
+
+        def close(self) -> None:
+            """Flush remaining buffer on task shutdown."""
+            self._flush()
 
         def _records_to_arrow_table(self, records: list[dict]):  # type: ignore[no-untyped-def]
             """Convert records to PyArrow Table (same as PyFlink version)."""

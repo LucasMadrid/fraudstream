@@ -85,7 +85,8 @@ def check_feast_view(feast_file: Path, expected_fields: list[str]) -> list[str]:
 
     missing = []
     for field in expected_fields:
-        if not re.search(r"\b" + re.escape(field) + r"\b", content):
+        pattern = r"\b" + re.escape(field) + r"\b"
+        if not re.search(pattern, content):
             missing.append(field)
 
     return missing
@@ -129,7 +130,10 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 if not feast_file.exists():
-                    print(f"    (file does not exist: {feast_file})")
+                    print(
+                        f"    (file does not exist: {feast_file})",
+                        file=sys.stderr,
+                    )
             return 1
 
         print("Schema validation passed: all Avro fields found in Feast views")

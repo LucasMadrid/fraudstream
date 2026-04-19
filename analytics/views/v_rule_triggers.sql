@@ -17,10 +17,10 @@ exploded AS (
         transaction_id,
         decision,
         fraud_score,
-        CAST(decision_time_ms AS DATE) AS decision_date,
+        CAST(from_unixtime(decision_time_ms / 1000) AS DATE) AS decision_date,
         rule_name
     FROM decisions
-    CROSS JOIN UNNEST(rule_triggers) AS t(rule_name)
+    CROSS JOIN UNNEST(rule_triggers) AS r(rule_name)
     WHERE rn = 1
       AND CARDINALITY(rule_triggers) > 0
 )

@@ -88,7 +88,7 @@ enriched AS (
     FROM iceberg.enriched_transactions
 )
 SELECT
-    CAST(d.decision_time_ms AS DATE)    AS decision_date,
+    CAST(from_unixtime(d.decision_time_ms / 1000) AS DATE) AS decision_date,
     e.channel,
     d.decision,
     COUNT(*)                            AS transaction_count,
@@ -101,7 +101,7 @@ JOIN enriched e
    AND e.rn = 1
 WHERE d.rn = 1
 GROUP BY
-    CAST(d.decision_time_ms AS DATE),
+    CAST(from_unixtime(d.decision_time_ms / 1000) AS DATE),
     e.channel,
     d.decision;
 
@@ -126,10 +126,10 @@ exploded AS (
         transaction_id,
         decision,
         fraud_score,
-        CAST(decision_time_ms AS DATE) AS decision_date,
+        CAST(from_unixtime(decision_time_ms / 1000) AS DATE) AS decision_date,
         rule_name
     FROM decisions
-    CROSS JOIN UNNEST(rule_triggers) AS t(rule_name)
+    CROSS JOIN UNNEST(rule_triggers) AS r(rule_name)
     WHERE rn = 1
 )
 SELECT
@@ -163,7 +163,7 @@ WITH decisions AS (
 )
 SELECT
     model_version,
-    CAST(decision_time_ms AS DATE)      AS decision_date,
+    CAST(from_unixtime(decision_time_ms / 1000) AS DATE) AS decision_date,
     decision,
     COUNT(*)                            AS transaction_count,
     AVG(fraud_score)                    AS avg_fraud_score,
@@ -175,5 +175,5 @@ FROM decisions
 WHERE rn = 1
 GROUP BY
     model_version,
-    CAST(decision_time_ms AS DATE),
+    CAST(from_unixtime(decision_time_ms / 1000) AS DATE),
     decision;

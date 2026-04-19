@@ -4,7 +4,7 @@
 -- Schema version: 1
 -- Partition: decision_date (DATE derived from decision_time_ms), daily
 
-CREATE TABLE IF NOT EXISTS iceberg.fraud_decisions (
+CREATE TABLE IF NOT EXISTS iceberg.default.fraud_decisions (
     -- Identity
     transaction_id      STRING          NOT NULL,   -- dedup key; join key to enriched_transactions
 
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS iceberg.fraud_decisions (
     model_version       STRING          NOT NULL,   -- from MLScore.model_version
 
     -- Timing
-    decision_time_ms    TIMESTAMP       NOT NULL,   -- drives daily partition
+    decision_time_ms    TIMESTAMP(6)    NOT NULL,   -- drives daily partition
     latency_ms          DOUBLE          NOT NULL,   -- end-to-end from Kafka consumer receipt
 
     -- Metadata

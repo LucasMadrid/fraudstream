@@ -87,7 +87,7 @@ def load_avro_schema(avsc_path: Path) -> dict:
     if not avsc_path.exists():
         raise FileNotFoundError(f"Schema file not found: {avsc_path}")
 
-    with open(avsc_path) as f:
+    with open(avsc_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -122,7 +122,7 @@ def load_existing_ddl(output_path: Path) -> tuple[set[str], bool]:
     if not output_path.exists() or output_path.stat().st_size == 0:
         return set(), False
 
-    with open(output_path) as f:
+    with open(output_path, encoding="utf-8") as f:
         content = f.read()
 
     has_create = "CREATE TABLE" in content.upper()
@@ -236,7 +236,7 @@ def main() -> int:
         if not has_create:
             output_path.write_text(ddl)
         else:
-            with open(output_path, "a") as f:
+            with open(output_path, "a", encoding="utf-8") as f:
                 f.write(ddl)
 
         return 0

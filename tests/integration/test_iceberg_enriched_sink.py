@@ -182,7 +182,7 @@ def test_flush_on_time_threshold(sink, enriched_record):
     not _has_pyarrow(),
     reason="pyarrow not installed",
 )
-def test_flush_on_buffer_size(sink, enriched_record, monkeypatch):
+def test_flush_on_buffer_size(sink, enriched_record):
     """Verify sink flushes when buffer reaches max size.
 
     Given:
@@ -193,9 +193,6 @@ def test_flush_on_buffer_size(sink, enriched_record, monkeypatch):
       - table.append() is called after the 3rd record
       - Buffer is cleared
     """
-    # Set buffer max to 3 for this test
-    monkeypatch.setenv("ICEBERG_BUFFER_MAX", "3")
-
     sink._table = MagicMock()
     sink._breaker = MagicMock()
     # Make breaker.call() actually invoke the function

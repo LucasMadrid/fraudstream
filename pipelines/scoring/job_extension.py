@@ -128,9 +128,8 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
             return value
 
         def close(self):
-            # IcebergDecisionsSink does not expose close, but we follow
-            # the pattern for consistency
-            pass
+            if self._sink:
+                self._sink.close()
 
     # print() acts as a terminal sink so Flink does not prune the map node.
     alert_stream.map(_AlertSinkFunction(config)).print()

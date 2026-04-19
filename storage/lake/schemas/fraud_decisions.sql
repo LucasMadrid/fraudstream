@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS iceberg.default.fraud_decisions (
 USING iceberg
 PARTITIONED BY (days(decision_time_ms))
 TBLPROPERTIES (
-    'format-version' = '2',
-    'write.parquet.compression-codec' = 'snappy',
-    'write.target-file-size-bytes' = '134217728'
+    'format-version'                       = '2',
+    'write.parquet.compression-codec'      = 'snappy',
+    'write.metadata.compression-codec'     = 'gzip',
+    'write.target-file-size-bytes'         = '134217728',
+    'history.expire.min-snapshots-to-keep' = '10'
 );

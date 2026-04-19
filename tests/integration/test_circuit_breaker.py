@@ -212,10 +212,13 @@ def test_circuit_half_open_allows_retry(sink_with_breaker, enriched_record):
 
     # Manually set circuit to HALF_OPEN state
     # (in real scenario, this happens after reset_timeout expires)
-    sink._breaker.open()
-    # Simulate reset_timeout expiring by setting last_failure_time in the past
+    from pybreaker import CircuitBreaker
     import time
-    sink._breaker._last_failure_time = time.time() - 31  # 31 seconds ago
+
+    # Replace breaker with tiny reset_timeout so HALF_OPEN is entered after a brief sleep
+    sink._breaker = CircuitBreaker(fail_max=3, reset_timeout=0.001, listeners=[])
+    sink._breaker.open()
+    time.sleep(0.01)  # wait for reset_timeout to expire → HALF_OPEN
 
     # Reset mock and make append() succeed
     sink._table.reset_mock()
@@ -270,11 +273,10 @@ def test_circuit_open_emits_dlq_event(sink_with_breaker, enriched_record):
 
         # Get the log call arguments
         call_args = mock_dlq_logger.warning.call_args
-        if call_args:
-            logged_message = call_args[0][0]
-            # Parse the JSON log to verify "circuit_open" is in the reason
-            dlq_event = json.loads(logged_message)
-            assert dlq_event["reason"] == "circuit_open"
+        assert call_args is not None, "DLQ logger was not called with any arguments"
+        logged_message = call_args[0][0]
+        dlq_event = json.loads(logged_message)
+        assert dlq_event["reason"] == "circuit_open"
 
 
 # ---------------------------------------------------------------------------
