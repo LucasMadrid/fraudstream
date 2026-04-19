@@ -138,7 +138,9 @@ try:  # pragma: no cover
             try:
                 from feast import FeatureStore
 
-                feast_repo_path = os.environ.get("FEAST_REPO_PATH", "storage/feature_store")
+                feast_repo_path = os.path.realpath(
+                    os.environ.get("FEAST_REPO_PATH", "storage/feature_store")
+                )
                 self._feast_store = FeatureStore(repo_path=feast_repo_path)
                 logger.info(f"Loaded Feast FeatureStore from {feast_repo_path}")
             except ImportError:
@@ -565,7 +567,9 @@ except ImportError:
             try:
                 from feast import FeatureStore
 
-                feast_repo_path = os.environ.get("FEAST_REPO_PATH", "storage/feature_store")
+                feast_repo_path = os.path.realpath(
+                    os.environ.get("FEAST_REPO_PATH", "storage/feature_store")
+                )
                 self._feast_store = FeatureStore(repo_path=feast_repo_path)
                 logger.info(f"Loaded Feast FeatureStore from {feast_repo_path}")
             except ImportError:

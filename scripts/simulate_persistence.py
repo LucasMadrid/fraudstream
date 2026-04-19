@@ -27,16 +27,34 @@ logger = logging.getLogger("simulate_persistence")
 os.environ.setdefault("ICEBERG_REST_URI", "http://localhost:8181")
 os.environ.setdefault("ICEBERG_WAREHOUSE", "s3://fraudstream-lake/")
 os.environ.setdefault("AWS_S3_ENDPOINT", "http://localhost:9000")
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
+
+# Credentials must be supplied via environment — no hardcoded defaults.
+# For local dev: export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY before running.
+_REQUIRED_CREDS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
+_missing_creds = [v for v in _REQUIRED_CREDS if not os.environ.get(v)]
+if _missing_creds:
+    print(
+        f"ERROR: required environment variables not set: {', '.join(_missing_creds)}\n"
+        "  For local dev against MinIO, set:\n"
+        "    export AWS_ACCESS_KEY_ID=<key>\n"
+        "    export AWS_SECRET_ACCESS_KEY=<secret>",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 # PyIceberg REST catalog config (must be set before pyiceberg imports)
 os.environ.setdefault("PYICEBERG_CATALOG__ICEBERG__URI", "http://localhost:8181")
 os.environ.setdefault("PYICEBERG_CATALOG__ICEBERG__WAREHOUSE", "s3://fraudstream-lake/")
 os.environ.setdefault("PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT", "http://localhost:9000")
 os.environ.setdefault("PYICEBERG_CATALOG__ICEBERG__S3__PATH__STYLE__ACCESS", "true")
-os.environ.setdefault("PYICEBERG_CATALOG__ICEBERG__S3__ACCESS__KEY__ID", "minioadmin")
-os.environ.setdefault("PYICEBERG_CATALOG__ICEBERG__S3__SECRET__ACCESS__KEY", "minioadmin")
+os.environ.setdefault(
+    "PYICEBERG_CATALOG__ICEBERG__S3__ACCESS__KEY__ID",
+    os.environ["AWS_ACCESS_KEY_ID"],
+)
+os.environ.setdefault(
+    "PYICEBERG_CATALOG__ICEBERG__S3__SECRET__ACCESS__KEY",
+    os.environ["AWS_SECRET_ACCESS_KEY"],
+)
 
 CHANNELS = ["web", "mobile", "pos", "api"]
 CURRENCIES = ["USD", "EUR", "GBP", "BRL"]
@@ -112,8 +130,13 @@ def _make_decision_record(txn_id: str, account_id: str, event_time: int) -> dict
     }
 
 
+_ALLOWED_TABLES = frozenset({"enriched_transactions", "fraud_decisions"})
+
+
 def _trino_count(table: str) -> int:
     """Get row count from Iceberg table via Trino CLI in container."""
+    if table not in _ALLOWED_TABLES:
+        raise ValueError(f"table '{table}' not in allowed list: {_ALLOWED_TABLES}")
     result = subprocess.run(
         [
             "docker",
