@@ -11,6 +11,7 @@ import logging
 import logging.config
 import threading
 
+# datetime.UTC requires Python 3.11+ (project minimum)
 UTC = datetime.UTC
 
 # Thread-local store — operators set this before processing each record

@@ -1,0 +1,9 @@
+project: fraudstream
+registry: registry/feature_store.db
+provider: local
+online_store:
+  type: sqlite
+  path: online_store.db
+offline_store:
+  type: dask
+entity_key_serialization_version: 2

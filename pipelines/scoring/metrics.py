@@ -53,6 +53,16 @@ rule_active_fp_total = Counter(
     ["rule_id"],
 )
 
+iceberg_decisions_buffer_overflow_total = Counter(
+    "iceberg_decisions_buffer_overflow_total",
+    "Total number of times the fraud decisions Iceberg buffer reached max capacity",
+)
+
+iceberg_decisions_catalog_unavailable_total = Counter(
+    "iceberg_decisions_catalog_unavailable_total",
+    "Total number of Iceberg catalog connection errors for fraud decisions",
+)
+
 
 def record_shadow_trigger(rule_id: str) -> None:
     """Increment the shadow trigger counter for a shadow rule that fired."""

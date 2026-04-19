@@ -1,6 +1,6 @@
 # FraudStream — Real-Time Fraud Detection at Scale
 
-Stop fraud before it lands. FraudStream processes payment transactions in milliseconds — enriching every event with velocity signals, geolocation, and device fingerprints, then evaluating them against a hot-configurable rule engine — all on Apache Kafka and Flink, with full Prometheus observability out of the box.
+Stop fraud before it lands. FraudStream processes payment transactions in milliseconds — enriching every event with velocity signals, geolocation, and device fingerprints, then evaluating them against a hot-configurable rule engine — all on Apache Kafka and Flink, with full Prometheus observability, durable Iceberg analytics, and a Feast feature store out of the box.
 
 ---
 
@@ -12,6 +12,7 @@ Stop fraud before it lands. FraudStream processes payment transactions in millis
   - [Enrichment Pipeline](#enrichment-pipeline)
   - [Fraud Rule Families](#fraud-rule-families)
   - [Alert Persistence](#alert-persistence)
+  - [Analytics Persistence Layer](#analytics-persistence-layer)
 - [Services](#services)
 - [Configuration](#configuration)
   - [Fraud Rules](#fraud-rules)
@@ -40,6 +41,7 @@ Stop fraud before it lands. FraudStream processes payment transactions in millis
   - [7. Fraud Rule Configuration](#7-fraud-rule-configuration--yaml-file-over-database-or-hardcoded-rules)
   - [8. Alert Persistence](#8-alert-persistence--dual-sink-kafka--postgresql)
   - [9. Metrics Bridge](#9-metrics-bridge--daemon-consumer-threads)
+  - [10. Analytics Persistence](#10-analytics-persistence--apache-iceberg--pyiceberg-over-flink-iceberg-connector)
 
 ---
 
@@ -55,10 +57,19 @@ make bootstrap
 # 3. Download GeoIP database (requires MAXMIND_LICENCE_KEY)
 make update-geoip
 
-# 4. Start the Flink enrichment + fraud scoring job
+# 4. Start the analytics tier (Iceberg REST catalog + Trino)
+docker compose up -d iceberg-rest trino
+
+# 5. Initialize Iceberg tables (idempotent)
+docker exec -it fraudstream-iceberg-rest bash /opt/iceberg/init-tables.sh
+
+# 6. Register Feast feature views
+cd storage/feature_store && feast apply && cd -
+
+# 7. Start the Flink enrichment + fraud scoring job
 make flink-job
 
-# 5. Generate sample transactions (mixed 25% suspicious traffic)
+# 8. Generate sample transactions (mixed 25% suspicious traffic)
 make generate
 ```
 
@@ -70,64 +81,48 @@ make generate
 
 ```mermaid
 flowchart LR
-    Client(["Client / Load Generator"])
+    Client(["Client"])
 
-    subgraph Ingestion["Ingestion Layer"]
-        Producer["Transaction Producer\nPython · Avro"]
-        SchemaReg["Schema Registry\n:8081"]
-    end
-
-    subgraph Bus["Message Bus — Apache Kafka (KRaft)"]
+    subgraph Kafka["Kafka (KRaft)"]
         direction TB
-        RawTopic[["txn.api\nAvro"]]
-        EnrichedTopic[["txn.enriched\nJSON"]]
-        AlertsTopic[["txn.fraud.alerts\nAvro"]]
-        DLQTopic[["*.dlq topics"]]
+        RawTopic[["txn.api"]]
+        EnrichedTopic[["txn.enriched"]]
+        AlertsTopic[["txn.fraud.alerts"]]
     end
 
-    subgraph Processing["Stream Processing — Apache Flink (PyFlink 2.x)"]
+    subgraph Flink["Apache Flink (PyFlink 2.x)"]
         direction TB
-        Enrichment["Enrichment Pipeline\ndedup · velocity · geo · device"]
-        Scoring["Fraud Rule Engine\nVEL · IT · ND families\n8 configurable rules"]
+        Enrichment["Enrichment\ndedup · velocity · geo · device"]
+        Scoring["Fraud Rule Engine\n8 configurable rules"]
     end
 
-    subgraph Persistence["Persistence Layer"]
-        PG[("PostgreSQL\nfraud_alerts")]
-        MinIO[("MinIO / S3\nFlink checkpoints")]
-    end
-
-    subgraph Observability["Observability"]
+    subgraph Analytics["Analytics Persistence Layer"]
         direction TB
-        Prometheus["Prometheus\n:9090"]
-        Grafana["Grafana\n:3000"]
+        IcebergEnriched[("enriched_transactions\n≤5s · by event_day")]
+        IcebergDecisions[("fraud_decisions\n≤5s · by transaction_id")]
+        Feast["Feast\nonline + offline store"]
+        Trino["Trino · SQL over Iceberg"]
     end
 
-    Client --> Producer
-    Producer -->|"Avro schema"| RawTopic
-    SchemaReg -. schema .-> Producer
+    PG[("PostgreSQL\nfraud_alerts")]
+    Grafana["Prometheus + Grafana"]
 
+    Client --> RawTopic
     RawTopic --> Enrichment
     Enrichment --> Scoring
-    Enrichment -->|enriched records| EnrichedTopic
-    Enrichment -->|schema errors| DLQTopic
-    Scoring -->|fraud alerts| AlertsTopic
-    Scoring -->|fraud alerts| PG
-    AlertsTopic -->|delivery failures| DLQTopic
-    Enrichment -. checkpoints .-> MinIO
+    Enrichment -->|enriched| EnrichedTopic
+    Enrichment --> IcebergEnriched
+    Enrichment --> Feast
+    Scoring -->|alerts| AlertsTopic
+    Scoring --> PG
+    Scoring --> IcebergDecisions
 
-    AlertsTopic -->|"metrics bridge"| Prometheus
-    EnrichedTopic -->|"metrics bridge"| Prometheus
-    Prometheus --> Grafana
-
-    style Processing fill:#1a1a2e,color:#eee,stroke:#4a4a8a
+    style Flink fill:#1a1a2e,color:#eee,stroke:#4a4a8a
     style Scoring fill:#3b1f4a,color:#eee,stroke:#7a4a9a
-    style Ingestion fill:#0d1117,color:#eee,stroke:#30363d
-    style Bus fill:#0d1117,color:#eee,stroke:#30363d
-    style Persistence fill:#0d1117,color:#eee,stroke:#30363d
-    style Observability fill:#0d1117,color:#eee,stroke:#30363d
+    style Analytics fill:#0a2010,color:#eee,stroke:#2a6a3a
 ```
 
-Transactions enter via Kafka (`txn.api`), are processed by the Flink job through four enrichment stages, evaluated against fraud rules, and routed to three outputs: the enriched topic, the fraud alerts topic, and PostgreSQL. A metrics bridge in the job process feeds Prometheus from those two Kafka topics.
+Transactions enter via Kafka (`txn.api`), are processed by the Flink job through four enrichment stages, evaluated against fraud rules, and routed to five outputs: the enriched Kafka topic, the fraud alerts topic, PostgreSQL, Iceberg (two tables), and the Feast feature store. A metrics bridge in the job process feeds Prometheus from the two Kafka topics. Trino provides a SQL interface over both Iceberg tables for analytics and audit queries without touching the scoring hot path.
 
 ---
 
@@ -166,6 +161,39 @@ Every flagged transaction is written to two sinks simultaneously:
 - **`txn.fraud.alerts`** (Kafka, Avro, `AT_LEAST_ONCE`) — consumed by downstream systems
 - **`fraud_alerts`** (PostgreSQL, `ON CONFLICT DO NOTHING`) — queryable store for fraud ops review and status lifecycle
 
+### Analytics Persistence Layer
+
+Every enriched transaction and every fraud decision is durably written to Apache Iceberg tables for analytics, audit, ML training, and regulatory retention (PCI-DSS 10.7, 7-year minimum). The write paths run as side outputs — they add **zero latency** to the 100ms scoring SLA.
+
+**Three write paths**:
+
+| Path | Source | Sink | SLA |
+|---|---|---|---|
+| Enrichment sink | `IcebergEnrichedSink` (side output from Flink `flat_map`) | `iceberg.enriched_transactions` | ≤ 5 s from Kafka receipt |
+| Decisions sink | `IcebergDecisionsSink` (side output from scoring job) | `iceberg.fraud_decisions` | ≤ 5 s from Kafka receipt |
+| Feast materialization | Feast Push API on every enrichment flush | SQLite online store + Parquet offline store | Eventual (1–2 s typical) |
+
+**Query interface**: Trino provides ANSI SQL over both Iceberg tables, joinable on `transaction_id`:
+
+```sql
+SELECT *
+FROM iceberg.v_transaction_audit
+WHERE transaction_id = '<id>';
+```
+
+Four pre-built analyst views ship in `analytics/views/`:
+
+| View | Description |
+|---|---|
+| `v_transaction_audit` | Full-row join of enriched features + fraud decision |
+| `v_fraud_rate_daily` | Daily fraud flag rate by rule family |
+| `v_rule_triggers` | Rule trigger counts by rule ID |
+| `v_model_versions` | Decision distribution by model version |
+
+**Deduplication**: Three-layer strategy — in-batch set dedup on `transaction_id`, daily Iceberg compaction (controlled by `RUN_COMPACTION=1` in `init-tables.sh`), and query-layer `ROW_NUMBER()` in Trino views as a final safety net.
+
+**Schema evolution**: The CI pipeline (`schema-evolution.yml`) blocks merges if Avro schema changes break alignment with the Iceberg DDL or Feast feature views, detected by `scripts/evolve_iceberg_schema.py` and `scripts/validate_feast_schemas.py`.
+
 ---
 
 ## Services
@@ -181,8 +209,10 @@ Every flagged transaction is written to two sinks simultaneously:
 | PostgreSQL | `localhost:5432` | fraudstream / fraudstream |
 | Job metrics endpoint | `http://localhost:8002/metrics` | — |
 | Management API | `http://localhost:8090` | `X-Api-Key` header (optional) |
+| Iceberg REST catalog | `http://localhost:8181` | — |
+| Trino | `http://localhost:8080` | — |
 
-All services start with `make bootstrap` or `make infra-up`.
+All core services start with `make bootstrap` or `make infra-up`. The analytics tier (`iceberg-rest`, `trino`) starts with `docker compose up -d iceberg-rest trino`.
 
 ---
 
@@ -194,6 +224,8 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 
 ### Environment Variables
 
+**Core pipeline**:
+
 | Variable | Default | Description |
 |---|---|---|
 | `RULES_YAML_PATH` | `rules/rules.yaml` | Path to rules config |
@@ -204,6 +236,21 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 | `MANAGEMENT_API_KEY` | — | API key for management endpoints (unset = open in dev) |
 | `MANAGEMENT_CORS_ORIGINS` | — | Comma-separated allowed CORS origins (disabled by default) |
 | `LOG_LEVEL` | `INFO` | Job log level (`DEBUG`, `INFO`, `WARNING`) |
+| `FRAUDSTREAM_ENV` | — | Set to `local` for local dev (enables MinIO defaults, SQLite Feast store) |
+
+**Analytics persistence layer**:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ICEBERG_REST_URI` | `http://localhost:8181` | REST catalog endpoint |
+| `ICEBERG_WAREHOUSE` | `s3://fraudstream-lake/` | MinIO bucket path for Iceberg data files |
+| `AWS_S3_ENDPOINT` | `http://localhost:9000` | MinIO S3-compatible endpoint |
+| `AWS_ACCESS_KEY_ID` | `minioadmin` | MinIO credentials (local dev only — production must use secrets management) |
+| `AWS_SECRET_ACCESS_KEY` | `minioadmin` | MinIO credentials (local dev only — production must use secrets management) |
+| `FEAST_REPO_PATH` | `storage/feature_store` | Feast repo root |
+| `ICEBERG_FLUSH_INTERVAL_S` | `1` | Seconds between Iceberg sink flushes |
+| `ICEBERG_BUFFER_MAX` | `100` | Max records per flush batch (enrichment sink) |
+| `ICEBERG_DECISIONS_BUFFER_MAX` | `100` | Max records per flush batch (decisions sink) |
 
 ### Kafka Topics
 
@@ -267,6 +314,10 @@ The Flink job exposes Prometheus metrics at `:8002/metrics`. A **Kafka metrics b
 | `enrichment_latency_ms` | — | End-to-end enrichment latency histogram |
 | `checkpoint_failures_total` | — | Flink checkpoint failures |
 | `dlq_events_total` | — | Messages routed to any DLQ topic |
+| `iceberg_records_written_total` | `table` | Records committed to each Iceberg table |
+| `iceberg_write_errors_total` | `table` | Iceberg write failures (circuit breaker feeds from this) |
+| `iceberg_flush_duration_seconds` | `table` | Flush latency histogram (p99 must stay below 4 s) |
+| `feast_push_failures_total` | — | Feast Push API call failures |
 
 ### Dashboards and Alerts
 
@@ -274,6 +325,8 @@ The Flink job exposes Prometheus metrics at `:8002/metrics`. A **Kafka metrics b
 - **Prometheus alert rules** in `infra/prometheus/alerts/fraud_rule_engine.yml`:
   - `FraudFlagRateZero` — fires when `rule_flags_total` drops to zero for an extended period (possible silent evaluator failure)
   - `DLQDepthHigh` — fires when DLQ topic depth grows above threshold
+
+Monitor `iceberg_flush_duration_seconds` p99: if it approaches 4 s, reduce `ICEBERG_FLUSH_INTERVAL_S` or scale the MinIO instance.
 
 ---
 
@@ -333,9 +386,18 @@ mypy pipelines/
 
 # Run a single test module
 pytest tests/unit/scoring/test_evaluator.py -v
+
+# Schema evolution validation (run before merging .avsc changes)
+python scripts/evolve_iceberg_schema.py \
+    --avsc pipelines/processing/schemas/enriched-txn-v1.avsc \
+    --output storage/lake/schemas/enriched_transactions.sql
+
+python scripts/validate_feast_schemas.py \
+    --avsc pipelines/processing/schemas/enriched-txn-v1.avsc \
+    --feast-repo storage/feature_store
 ```
 
-**Coverage gate**: 80% required. The CI pipeline runs unit tests first, then integration tests against a live Docker stack. Integration tests require `make infra-up` and `make topics` before running locally.
+**Coverage gate**: 80% required. The CI pipeline runs unit tests first, then integration tests against a live Docker stack. Integration tests require `make infra-up` and `make topics` before running locally. Schema evolution CI runs automatically on `.avsc` file changes via `.github/workflows/schema-evolution.yml`.
 
 ---
 
@@ -352,6 +414,7 @@ pipelines/
   processing/                     # Feature 002 — Flink enrichment job
     operators/                    # VelocityEnrichment, GeolocationMapFunction,
     │                             #   DeviceProcessFunction, EnrichedRecordAssembler
+    │                             #   IcebergEnrichedSink (side output → Iceberg)
     shared/
       avro_serde.py               # Avro deserialisation + schema validation
       dlq_sink.py                 # DLQ record builder
@@ -360,7 +423,7 @@ pipelines/
     job.py                        # Entry point (build_job + main)
     config.py                     # ProcessorConfig (env-driven dataclass)
     logging_config.py             # Structured JSON logging
-    metrics.py                    # checkpoint_failures_total counter
+    metrics.py                    # checkpoint_failures_total, iceberg_flush_duration_seconds
     telemetry.py                  # OpenTelemetry tracer setup
   scoring/                        # Feature 003 — Fraud rule engine
     rules/
@@ -371,20 +434,45 @@ pipelines/
     sinks/
       alert_kafka.py              # AlertKafkaSink — Avro → txn.fraud.alerts
       alert_postgres.py           # AlertPostgresSink — INSERT INTO fraud_alerts
+      iceberg_decisions.py        # IcebergDecisionsSink — side output → iceberg.fraud_decisions
     schemas/                      # fraud-alert-v1.avsc, fraud-alert-dlq-v1.avsc
-    types.py                      # FraudAlert dataclass
+    types.py                      # FraudDecision dataclass (ALLOW/FLAG/BLOCK)
     metrics.py                    # rule_evaluations_total, rule_flags_total
     config.py                     # ScoringConfig (env-driven dataclass)
+
+storage/                          # Feature 006 — Analytics persistence layer
+  lake/
+    schemas/                      # enriched_transactions.sql, fraud_decisions.sql (Iceberg DDL)
+    catalog.properties            # PyIceberg catalog config (REST + S3)
+    migrations/                   # Future DDL migrations
+  feature_store/                  # Feast repository
+    feature_store.yaml            # Backend config (SQLite online, Parquet offline)
+    entities/                     # account.py, device.py
+    features/                     # velocity_features.py, geo_features.py, device_features.py
+    registry/                     # Feast metadata registry
+
+analytics/
+  views/                          # Feature 006 — Trino analyst views
+    v_transaction_audit.sql       # Full audit row (enriched JOIN decisions)
+    v_fraud_rate_daily.sql        # Daily fraud rate by rule family
+    v_rule_triggers.sql           # Rule trigger counts by rule ID
+    v_model_versions.sql          # Decision distribution by model version
 
 rules/
   rules.yaml                      # Live rule set — edit thresholds here
 
 scripts/
   generate_transactions.py        # Traffic generator + suspicious injection
+  evolve_iceberg_schema.py        # Avro → Iceberg DDL alignment validator
+  validate_feast_schemas.py       # Avro → Feast feature view alignment validator
+  checkpoint-rollback.sh          # Flink checkpoint rollback helper
+  flink-rolling-upgrade.sh        # Rolling upgrade script
+  replay-dlq-message.sh           # DLQ replay helper
 
 infra/
   docker-compose.yml              # Full stack: Kafka, Flink, Prometheus, Grafana,
-  │                               #   MinIO, PostgreSQL, Schema Registry
+  │                               #   MinIO, PostgreSQL, Schema Registry,
+  │                               #   Iceberg REST catalog, Trino
   kafka/
     topics.sh                     # Topic creation + Avro schema registration
   flink/
@@ -394,6 +482,11 @@ infra/
   postgres/
     migrations/
       001_create_fraud_alerts.sql # fraud_alerts DDL + indexes
+  iceberg/                        # Feature 006 — Iceberg REST catalog
+    catalog-config.properties     # Tabular REST catalog settings
+    init-tables.sh                # Idempotent DDL runner (enriched_transactions + fraud_decisions)
+  trino/                          # Feature 006 — Trino query engine
+    catalog/                      # Iceberg catalog connector config
   prometheus/
     prometheus.yml                # Scrape config (job :8002, Kafka exporter)
     alerts/
@@ -401,6 +494,10 @@ infra/
   grafana/
     provisioning/                 # Auto-provisioned datasource + fraud dashboard
   geoip/                          # GeoLite2-City.mmdb (gitignored; make update-geoip)
+
+docs/
+  data_catalog.yaml               # Field-level data catalog (all Iceberg + Feast columns)
+  schema-evolution.md             # Schema evolution runbook
 
 tests/
   unit/
@@ -412,8 +509,17 @@ tests/
     test_api_ingestion.py         # End-to-end ingestion with real Kafka
     test_enrichment_pipeline.py   # Flink operator integration tests
     test_rule_engine_pipeline.py  # Fraud scoring integration smoke test
-  contract/                       # Ingestion Avro schema contract tests
-  contracts/                      # Fraud alert Avro schema contract tests
+    test_iceberg_enriched_sink.py # Iceberg enriched sink write verification
+    test_iceberg_decisions_sink.py# Iceberg decisions sink write verification
+    test_feast_materialization.py # Feast push + PIT feature lookup
+    test_circuit_breaker.py       # Iceberg circuit breaker state transitions
+    test_catalog_failure.py       # Catalog failure handling
+  contract/
+    test_schema_contracts.py      # Avro schema contract tests
+    test_avro_iceberg_alignment.py# Avro ↔ Iceberg DDL alignment
+    test_trino_views.py           # Trino analyst view integration tests
+  performance/
+    test_sink_hot_path_latency.py # Side output hot-path latency (5s budget)
   load/
     test_throughput.py            # Throughput benchmarks
     test_memory.py                # State memory benchmarks
@@ -423,12 +529,15 @@ specs/
   002-flink-stream-processor/     # Spec, research, checklists (7 categories)
   003-fraud-rule-engine/          # Spec, plan, tasks, implementation checklists
   004-operational-excellence/     # Spec (in progress)
+  006-analytics-persistence-layer/# Spec, plan, research, data-model, contracts,
+                                  #   quickstart, tasks (44 tasks, all complete)
 
 .github/
   workflows/
     ci.yml                        # Unit tests → integration tests → coverage gate
     geoip-refresh.yml             # On-demand GeoIP database refresh
     weekly-geoip-refresh.yml      # Scheduled weekly GeoIP refresh
+    schema-evolution.yml          # Avro schema change gate (blocks on DDL/Feast misalignment)
 ```
 
 ---
@@ -557,3 +666,22 @@ specs/
 | Push gateway | Adds a stateful middleman; aggregation semantics differ from pull-based scrape |
 
 **Tradeoff accepted**: ~100–500ms metric lag between a rule firing and the counter being visible in Prometheus (Kafka consumer poll interval). Acceptable for operational dashboards, not suitable for sub-second alerting.
+
+---
+
+### 10. Analytics Persistence — Apache Iceberg + PyIceberg over Flink Iceberg Connector
+
+**Chose**: `pyiceberg` 0.7+ with REST catalog + PyArrow table construction; side output pattern in Flink `flat_map`
+
+| Alternative | Why rejected |
+|---|---|
+| Flink Iceberg connector (Java) | Requires Java UDF bridge or separate Flink job; incompatible with PyFlink-only operator graph |
+| Delta Lake | No native Python writer with REST catalog; heavier Spark dependency for compaction |
+| Direct S3 Parquet writes | No transactional guarantees, no schema evolution, no Trino catalog integration |
+| Kafka → separate Iceberg consumer | Additional Flink job to maintain; introduces additional end-to-end latency |
+
+**Side output pattern**: The Iceberg and Feast sinks are invoked inside a `flat_map` operator that `yield`s the enriched record **before** calling `self._iceberg_sink.invoke()`. This guarantees zero added latency on the 100ms scoring hot path regardless of Iceberg write performance.
+
+**Circuit breaker**: `pybreaker` wraps each `table.append()` call — 3 consecutive failures open the breaker, protecting the Flink job from cascading failures if MinIO or the catalog becomes unavailable. The breaker moves to HALF_OPEN after 30s and resets on a successful write.
+
+**Tradeoff accepted**: PyIceberg writes are synchronous within the flush call; large batches or slow MinIO I/O can increase flush latency. At `ICEBERG_FLUSH_INTERVAL_S=1` and `ICEBERG_BUFFER_MAX=100`, worst-case flush delay is just under 1 second. The 5-second budget leaves ample margin. Do not increase `ICEBERG_FLUSH_INTERVAL_S` above 4 seconds.

@@ -65,3 +65,25 @@ corrected_record_latency_ms = Histogram(
     buckets=[1, 5, 10, 25, 50, 100, 250, 500],
     labelnames=["stage"],
 )
+
+# Iceberg sink metrics
+iceberg_buffer_overflow_total = Counter(
+    "iceberg_buffer_overflow_total",
+    "Total Iceberg buffer overflow events (batch size reached max without successful flush)",
+)
+
+iceberg_catalog_unavailable_total = Counter(
+    "iceberg_catalog_unavailable_total",
+    "Total number of Iceberg catalog connection failures",
+)
+
+iceberg_flush_duration_seconds = Histogram(
+    "iceberg_flush_duration_seconds",
+    "Time taken to flush enriched transactions to Iceberg",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
+
+feast_push_failures_total = Counter(
+    "feast_push_failures_total",
+    "Total number of Feast feature push failures",
+)

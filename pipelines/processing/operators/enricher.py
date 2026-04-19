@@ -20,8 +20,26 @@ try:  # pragma: no cover
     from pyflink.datastream.functions import FlatMapFunction
     from pyflink.datastream.state import StateTtlConfig, ValueStateDescriptor
 
+    from pipelines.processing.operators.iceberg_sink import IcebergEnrichedSink
+
     class EnrichedRecordAssembler(FlatMapFunction):
         """Stateless: assembles the final EnrichedTransactionEvent."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._iceberg_sink: IcebergEnrichedSink | None = None
+
+        def open(self, _runtime_context) -> None:
+            self._iceberg_sink = IcebergEnrichedSink()
+            self._iceberg_sink.open(_runtime_context)
+
+        def close(self) -> None:
+            if self._iceberg_sink is not None:
+                try:
+                    self._iceberg_sink.close()
+                except Exception:
+                    logger.warning("Error closing IcebergEnrichedSink", exc_info=True)
+                self._iceberg_sink = None
 
         def flat_map(self, value):
             txn, velocity_dict, geo_dict, device_dict = value
@@ -36,7 +54,7 @@ try:  # pragma: no cover
                 lat_metric.observe(enrichment_latency_ms)
             except Exception:
                 pass
-            yield _assemble_record(
+            record = _assemble_record(
                 txn,
                 velocity_dict,
                 geo_dict,
@@ -44,6 +62,11 @@ try:  # pragma: no cover
                 enrichment_time,
                 enrichment_latency_ms,
             )
+            # Write to Iceberg before yielding so the call is never skipped if the
+            # generator is abandoned after the first value is consumed.
+            if self._iceberg_sink is not None:
+                self._iceberg_sink.invoke(record, None)
+            yield record
 
         def assemble(self, txn, velocity_dict, geo_dict, device_dict) -> dict:
             """Test-friendly wrapper around _assemble_record."""
@@ -52,7 +75,7 @@ try:  # pragma: no cover
                 0,
                 enrichment_time - getattr(txn, "processing_time", enrichment_time),
             )
-            return _assemble_record(
+            record = _assemble_record(
                 txn,
                 velocity_dict,
                 geo_dict,
@@ -60,6 +83,9 @@ try:  # pragma: no cover
                 enrichment_time,
                 enrichment_latency_ms,
             )
+            if self._iceberg_sink is not None:
+                self._iceberg_sink.invoke(record, None)
+            return record
 
     class TransactionDedup(KeyedProcessFunction):
         """Keyed on transaction_id. Drops duplicates within 48h TTL."""
@@ -102,6 +128,7 @@ try:  # pragma: no cover
 
 except ImportError:
     # pyflink not installed — plain-Python fallback for unit tests
+    from pipelines.processing.operators.iceberg_sink import IcebergEnrichedSink
 
     class EnrichedRecordAssembler:  # type: ignore[no-redef]  # pragma: no cover
         """Plain-Python stand-in for unit tests."""
@@ -112,7 +139,7 @@ except ImportError:
                 0,
                 enrichment_time - getattr(txn, "processing_time", enrichment_time),
             )
-            return _assemble_record(
+            record = _assemble_record(
                 txn,
                 velocity_dict,
                 geo_dict,
@@ -120,6 +147,11 @@ except ImportError:
                 enrichment_time,
                 enrichment_latency_ms,
             )
+            # Write to Iceberg (side-output)
+            if not hasattr(self, "_iceberg_sink"):
+                self._iceberg_sink = IcebergEnrichedSink()
+            self._iceberg_sink.invoke(record, None)
+            return record
 
     class TransactionDedup:  # type: ignore[no-redef]  # pragma: no cover
         """Plain-Python stand-in for unit tests."""
@@ -143,7 +175,7 @@ def _assemble_record(
     enrichment_time,
     enrichment_latency_ms,
 ) -> dict:
-    """Build the 36-field EnrichedTransactionEvent dict."""
+    """Build the 38-field EnrichedTransactionEvent dict."""
     return {
         "transaction_id": txn.transaction_id,
         "account_id": txn.account_id,
@@ -176,6 +208,8 @@ def _assemble_record(
         "device_first_seen": device_dict.get("device_first_seen"),
         "device_txn_count": device_dict.get("device_txn_count"),
         "device_known_fraud": device_dict.get("device_known_fraud"),
+        "prev_geo_country": device_dict.get("prev_geo_country"),
+        "prev_txn_time_ms": device_dict.get("prev_txn_time_ms"),
         "enrichment_time": enrichment_time,
         "enrichment_latency_ms": enrichment_latency_ms,
         "processor_version": _PROCESSOR_VERSION,

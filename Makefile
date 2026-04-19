@@ -1,6 +1,11 @@
 COMPOSE        := docker compose -f infra/docker-compose.yml
-PYTHON         := python3.11
+PYTHON         := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3.11)
+TRINO          := docker exec fraudstream-trino trino
 export DOCKER_BUILDKIT := 1
+
+## MinIO credentials for PyIceberg S3FileIO (override for production)
+MINIO_ACCESS_KEY ?= minioadmin
+MINIO_SECRET_KEY ?= minioadmin
 
 ## Kafka connector version compatible with PyFlink/Flink 2.x
 KAFKA_CONNECTOR_VERSION := 4.0.1-2.0
@@ -9,7 +14,9 @@ KAFKA_CONNECTOR_URL     := https://repo1.maven.org/maven2/org/apache/flink/flink
 .PHONY: infra-up infra-down infra-clean infra-ps infra-logs \
         infra-restart infra-restart-grafana infra-restart-prometheus \
         topics bootstrap update-geoip download-jars \
-        flink-job generate generate-suspicious simulate-alerts consume \
+        flink-job flink-job-analytics \
+        generate generate-suspicious simulate-alerts consume \
+        analytics-counts analytics-join analytics-feast analytics-verify \
         install test test-unit test-integration
 
 # ── Infrastructure lifecycle ──────────────────────────────────────────────
@@ -115,6 +122,55 @@ flink-job:
 	  --input-topic txn.api \
 	  --output-topic txn.enriched \
 	  --geoip-db-path infra/geoip/GeoLite2-City.mmdb
+
+## flink-job-analytics: run the enrichment job with Iceberg + Feast side-outputs enabled.
+## Requires MinIO to be running (make infra-up). Writes to:
+##   iceberg.default.enriched_transactions  (PyIceberg → MinIO)
+##   iceberg.default.fraud_decisions        (PyIceberg → MinIO)
+##   storage/feature_store/                 (Feast online store)
+## Override credentials: MINIO_ACCESS_KEY=x MINIO_SECRET_KEY=y make flink-job-analytics
+
+flink-job-analytics:
+	AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
+	AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
+	PYICEBERG_CATALOG__ICEBERG__URI=http://localhost:8181 \
+	PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
+	PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://localhost:9000 \
+	PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
+	RULES_YAML_PATH=rules/rules.yaml \
+	$(PYTHON) -m pipelines.processing.job \
+	  --kafka-brokers localhost:9092 \
+	  --input-topic txn.api \
+	  --output-topic txn.enriched \
+	  --geoip-db-path infra/geoip/GeoLite2-City.mmdb
+
+# ── Analytics persistence verification ───────────────────────────────────
+## analytics-counts: row counts for both Iceberg tables via Trino
+analytics-counts:
+	@echo "==> enriched_transactions"
+	@$(TRINO) --execute "SELECT COUNT(*) AS rows FROM iceberg.default.enriched_transactions;"
+	@echo "==> fraud_decisions"
+	@$(TRINO) --execute "SELECT COUNT(*) AS rows FROM iceberg.default.fraud_decisions;"
+
+## analytics-join: join both tables on transaction_id — show decisions with features
+## LIMIT=20 make analytics-join   → show more rows
+analytics-join:
+	@$(TRINO) --execute " \
+	  SELECT e.account_id, e.amount, e.vel_count_1h, \
+	         d.decision, d.fraud_score, d.rule_triggers \
+	  FROM iceberg.default.enriched_transactions e \
+	  JOIN iceberg.default.fraud_decisions d \
+	    ON e.transaction_id = d.transaction_id \
+	  ORDER BY d.fraud_score DESC \
+	  LIMIT $(or $(LIMIT),20);"
+
+## analytics-feast: check Feast online store for a given account.
+## ACCOUNT=acc-0007 make analytics-feast   → inspect a specific account
+analytics-feast:
+	@$(PYTHON) -c "from feast import FeatureStore; store = FeatureStore(repo_path='storage/feature_store'); rows = [{'account_id': '$(or $(ACCOUNT),acc-0001)'}]; feats = store.get_online_features(features=['velocity_features:vel_count_1m','velocity_features:vel_count_1h','velocity_features:vel_amount_24h'],entity_rows=rows).to_dict(); [print(f'{k}: {v}') for k, v in feats.items()]"
+
+## analytics-verify: run all three checks in sequence (counts + join sample + feast)
+analytics-verify: analytics-counts analytics-join analytics-feast
 
 # ── Data generation ──────────────────────────────────────────────────────
 ## Runs forever by default (COUNT=0). Override: COUNT=50 DELAY=200 make generate

@@ -24,12 +24,15 @@ class DeviceProfileState:
     txn_count: int  # lifetime transaction count
     known_fraud: bool  # always False in v1 (fraud label loop not wired)
     last_seen_ms: int  # epoch ms of most recent transaction (TTL timer)
+    last_geo_country: str | None  # ISO 3166-1 alpha-2 from prior txn
 
 
 _NULL_DEVICE_FIELDS: dict = {
     "device_first_seen": None,
     "device_txn_count": None,
     "device_known_fraud": None,
+    "prev_geo_country": None,
+    "prev_txn_time_ms": None,
 }
 
 
@@ -73,6 +76,8 @@ try:  # pragma: no cover
 
             event_time_ms: int = ctx.timestamp()
             current: DeviceProfileState | None = self._state.value()
+            prev_geo_country = current.last_geo_country if current else None
+            prev_txn_time_ms = current.last_seen_ms if current else None
 
             if current is None:
                 updated = DeviceProfileState(
@@ -80,6 +85,7 @@ try:  # pragma: no cover
                     txn_count=1,
                     known_fraud=False,
                     last_seen_ms=event_time_ms,
+                    last_geo_country=geo.get("geo_country"),
                 )
             else:
                 updated = DeviceProfileState(
@@ -87,6 +93,7 @@ try:  # pragma: no cover
                     txn_count=current.txn_count + 1,
                     known_fraud=current.known_fraud,
                     last_seen_ms=event_time_ms,
+                    last_geo_country=geo.get("geo_country"),
                 )
 
             self._state.update(updated)
@@ -99,6 +106,8 @@ try:  # pragma: no cover
                     "device_first_seen": updated.first_seen_ms,
                     "device_txn_count": updated.txn_count,
                     "device_known_fraud": updated.known_fraud,
+                    "prev_geo_country": prev_geo_country,
+                    "prev_txn_time_ms": prev_txn_time_ms,
                 },
             )
 
@@ -111,12 +120,16 @@ try:  # pragma: no cover
                 return dict(_NULL_DEVICE_FIELDS)
 
             current = self._pure_state.get(api_key_id)
+            prev_geo_country = current.last_geo_country if current else None
+            prev_txn_time_ms = current.last_seen_ms if current else None
+
             if current is None:
                 updated = DeviceProfileState(
                     first_seen_ms=event_time_ms,
                     txn_count=1,
                     known_fraud=False,
                     last_seen_ms=event_time_ms,
+                    last_geo_country=None,
                 )
             else:
                 updated = DeviceProfileState(
@@ -124,12 +137,15 @@ try:  # pragma: no cover
                     txn_count=current.txn_count + 1,
                     known_fraud=current.known_fraud,
                     last_seen_ms=event_time_ms,
+                    last_geo_country=None,
                 )
             self._pure_state[api_key_id] = updated
             return {
                 "device_first_seen": updated.first_seen_ms,
                 "device_txn_count": updated.txn_count,
                 "device_known_fraud": updated.known_fraud,
+                "prev_geo_country": prev_geo_country,
+                "prev_txn_time_ms": prev_txn_time_ms,
             }
 
 except ImportError:
@@ -147,12 +163,16 @@ except ImportError:
                 return dict(_NULL_DEVICE_FIELDS)
 
             current = self._state.get(api_key_id)
+            prev_geo_country = current.last_geo_country if current else None
+            prev_txn_time_ms = current.last_seen_ms if current else None
+
             if current is None:
                 updated = DeviceProfileState(
                     first_seen_ms=event_time_ms,
                     txn_count=1,
                     known_fraud=False,
                     last_seen_ms=event_time_ms,
+                    last_geo_country=None,
                 )
             else:
                 updated = DeviceProfileState(
@@ -160,10 +180,13 @@ except ImportError:
                     txn_count=current.txn_count + 1,
                     known_fraud=current.known_fraud,
                     last_seen_ms=event_time_ms,
+                    last_geo_country=None,
                 )
             self._state[api_key_id] = updated
             return {
                 "device_first_seen": updated.first_seen_ms,
                 "device_txn_count": updated.txn_count,
                 "device_known_fraud": updated.known_fraud,
+                "prev_geo_country": prev_geo_country,
+                "prev_txn_time_ms": prev_txn_time_ms,
             }

@@ -1,0 +1,30 @@
+name: Schema Evolution Gate
+
+on:
+  push:
+    paths:
+      - '**.avsc'
+  pull_request:
+    paths:
+      - '**.avsc'
+
+jobs:
+  schema-evolution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install "pyiceberg[pyarrow]==0.7.1" "fastavro==1.9.4"
+      - name: Validate Iceberg DDL alignment
+        run: |
+          python scripts/evolve_iceberg_schema.py \
+            --avsc pipelines/processing/schemas/enriched-txn-v1.avsc \
+            --output storage/lake/schemas/enriched_transactions.sql
+      - name: Validate Feast schema alignment
+        run: |
+          python scripts/validate_feast_schemas.py \
+            --avsc pipelines/processing/schemas/enriched-txn-v1.avsc \
+            --feast-repo storage/feature_store

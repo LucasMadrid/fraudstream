@@ -39,7 +39,9 @@ class ProcessorConfig:
     allowed_lateness_seconds: int = field(
         default_factory=lambda: int(os.environ.get("ALLOWED_LATENESS_SECONDS", "30"))
     )
-    # S3/MinIO credentials for checkpoint storage
+    # S3/MinIO credentials for checkpoint storage.
+    # Defaults are MinIO local-dev values (FRAUDSTREAM_ENV=local only).
+    # Production MUST set S3_ACCESS_KEY and S3_SECRET_KEY via secrets management.
     s3_endpoint: str = field(
         default_factory=lambda: os.environ.get("S3_ENDPOINT", "http://minio:9000")
     )
