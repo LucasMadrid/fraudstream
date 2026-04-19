@@ -267,7 +267,7 @@ try:  # pragma: no cover
             """Flush remaining buffer on task shutdown."""
             self._flush()
 
-        def _records_to_arrow_table(self, records: list[dict]) -> pa.Table:  # type: ignore[name-defined]
+        def _records_to_arrow_table(self, records: list[dict]):  # type: ignore[return]
             """Convert list of FraudDecision records to PyArrow Table.
 
             Maps all 8 schema fields for fraud decisions:

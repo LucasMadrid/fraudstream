@@ -14,7 +14,6 @@ Run with:
 from __future__ import annotations
 
 import json
-import logging
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 

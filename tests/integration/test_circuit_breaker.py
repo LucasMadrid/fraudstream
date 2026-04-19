@@ -15,7 +15,6 @@ Run with:
 from __future__ import annotations
 
 import json
-import logging
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -126,7 +125,6 @@ def test_circuit_opens_after_three_failures(sink_with_breaker, enriched_record):
       - After 3rd failure, circuit breaker is OPEN
       - circuit_breaker.current_state == "open"
     """
-    from pybreaker import CircuitBreakerError
 
     sink = sink_with_breaker
     sink._table.append.side_effect = ConnectionError("Connection refused")
@@ -166,7 +164,6 @@ def test_circuit_open_skips_append(sink_with_breaker, enriched_record):
       - table.append() is NOT called
       - CircuitBreakerError is raised by breaker.call()
     """
-    from pybreaker import CircuitBreakerError
 
     sink = sink_with_breaker
 
@@ -212,8 +209,9 @@ def test_circuit_half_open_allows_retry(sink_with_breaker, enriched_record):
 
     # Manually set circuit to HALF_OPEN state
     # (in real scenario, this happens after reset_timeout expires)
-    from pybreaker import CircuitBreaker
     import time
+
+    from pybreaker import CircuitBreaker
 
     # Replace breaker with tiny reset_timeout so HALF_OPEN is entered after a brief sleep
     sink._breaker = CircuitBreaker(fail_max=3, reset_timeout=0.001, listeners=[])

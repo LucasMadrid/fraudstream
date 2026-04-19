@@ -749,7 +749,7 @@ except ImportError:
                         "device_first_seen",
                         "prev_txn_time_ms",
                     ):
-                        # Iceberg timestamp(6) = microseconds; values are epoch-ms → multiply by 1000
+                        # Iceberg timestamp(6) = microseconds; epoch-ms → multiply by 1000
                         columns[field_name].append(int(value) * 1000 if value is not None else None)
                     elif field_name in (
                         "vel_count_1m",

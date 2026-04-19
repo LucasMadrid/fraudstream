@@ -9,12 +9,9 @@ Marked as @pytest.mark.integration and skip gracefully if Trino is unreachable.
 
 import os
 import time
-from typing import Optional
 
 import pytest
 import trino.dbapi
-from trino.exceptions import OperationalError
-
 
 # Configuration from environment
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
@@ -80,7 +77,7 @@ def execute_with_timeout(
     cursor,
     query: str,
     timeout_seconds: float = 60.0,
-) -> Optional[tuple]:
+) -> tuple | None:
     """
     Execute a query and assert it completes within the timeout.
 
