@@ -148,6 +148,10 @@ try:  # pragma: no cover
                     f"Could not initialize Feast store: {e}; skipping feature materialization"
                 )
 
+        def close(self) -> None:
+            """Flush remaining buffer on task shutdown."""
+            self._flush()
+
         def invoke(self, value: dict, context) -> None:  # type: ignore[no-untyped-def]
             """Append record to buffer and flush if conditions met.
 
@@ -577,6 +581,10 @@ except ImportError:
                     f"Could not initialize Feast store: {e}; skipping feature materialization"
                 )
 
+        def close(self) -> None:
+            """Flush remaining buffer on task shutdown."""
+            self._flush()
+
         def invoke(self, value: dict, context=None) -> None:  # type: ignore[no-untyped-def]
             """Append record to buffer and flush if conditions met."""
             try:
@@ -617,7 +625,6 @@ except ImportError:
                 deduplicated[0].get("transaction_id", "unknown") if deduplicated else "unknown"
             )
 
-            feast_error = None
             try:
                 if self._catalog_loaded and self._table is not None:
                     pa_table = self._records_to_arrow_table(deduplicated)
@@ -627,7 +634,8 @@ except ImportError:
                         self._table.append(pa_table)
                     logger.info(f"Flushed {batch_size} records to iceberg.enriched_transactions")
 
-                    # Push to Feast after successful Iceberg write
+                    # Push to Feast after successful Iceberg write (best-effort; failures
+                    # are logged and counted but do not fail the Iceberg flush).
                     try:
                         self._push_to_feast(pa_table, deduplicated)
                     except Exception as e:
@@ -641,7 +649,6 @@ except ImportError:
                             )
                         )
                         self._increment_feast_counter()
-                        feast_error = e
 
             except Exception as e:
                 if "CircuitBreakerError" in type(e).__name__:
@@ -681,10 +688,6 @@ except ImportError:
                 if len(self._buffer) >= ICEBERG_BUFFER_MAX:
                     _increment_counter("iceberg_buffer_overflow_total")
                 self._buffer.clear()
-
-                # Re-raise Feast errors after buffer cleanup
-                if feast_error is not None:
-                    raise feast_error
 
         def _records_to_arrow_table(self, records: list[dict]):  # type: ignore[no-untyped-def]
             """Convert records to PyArrow Table (same as PyFlink version)."""
