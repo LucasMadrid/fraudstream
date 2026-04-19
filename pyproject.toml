@@ -52,7 +52,7 @@ scoring = [
 ]
 analytics = [
     "pyiceberg[pyarrow,s3fs]>=0.7",
-    "feast>=0.40",
+    "feast>=0.54.0",
     "trino>=0.328",
     "apache-flink>=2.0",
     "confluent-kafka[schema-registry]>=2.3",
