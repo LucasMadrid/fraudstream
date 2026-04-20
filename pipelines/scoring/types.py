@@ -3,7 +3,57 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
+
+
+class FallbackReason(Enum):
+    TIMEOUT = "timeout"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class FeatureVector:
+    account_id: str
+    vel_count_1m: int
+    vel_amount_1m: float
+    vel_count_5m: int
+    vel_amount_5m: float
+    vel_count_1h: int
+    vel_amount_1h: float
+    vel_count_24h: int
+    vel_amount_24h: float
+    geo_country: str
+    geo_city: str
+    geo_network_class: str
+    geo_confidence: float
+    device_first_seen: int
+    device_txn_count: int
+    device_known_fraud: bool
+    prev_geo_country: str
+    prev_txn_time_ms: int
+
+
+ZERO_FEATURE_VECTOR = FeatureVector(
+    account_id="",
+    vel_count_1m=0,
+    vel_amount_1m=0.0,
+    vel_count_5m=0,
+    vel_amount_5m=0.0,
+    vel_count_1h=0,
+    vel_amount_1h=0.0,
+    vel_count_24h=0,
+    vel_amount_24h=0.0,
+    geo_country="",
+    geo_city="",
+    geo_network_class="",
+    geo_confidence=0.0,
+    device_first_seen=0,
+    device_txn_count=0,
+    device_known_fraud=False,
+    prev_geo_country="",
+    prev_txn_time_ms=0,
+)
 
 
 @dataclass
