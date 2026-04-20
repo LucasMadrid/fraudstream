@@ -4,7 +4,29 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge, Histogram
+
+feature_store_fallback_total = Counter(
+    "feature_store_fallback_total",
+    "Feature store zero-value fallbacks",
+    ["reason"],
+)
+
+feature_store_miss_total = Counter(
+    "feature_store_miss_total",
+    "Feature store cache misses (account not found)",
+)
+
+feature_store_retrieval_seconds = Histogram(
+    "feature_store_retrieval_seconds",
+    "Feature store retrieval latency",
+    buckets=[0.001, 0.002, 0.003, 0.005, 0.010, 0.050, 0.100, 0.250, 0.500, 1.0],
+)
+
+feature_materialization_lag_ms = Gauge(
+    "feature_materialization_lag_ms",
+    "Milliseconds since last successful feature materialization push",
+)
 
 rule_evaluations_total = Counter(
     "rule_evaluations_total",

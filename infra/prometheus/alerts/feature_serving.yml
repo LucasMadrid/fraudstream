@@ -1,0 +1,17 @@
+groups:
+  - name: feature_serving
+    rules:
+      - alert: FeatureStoreStalenessHigh
+        expr: feature_materialization_lag_ms > 30000
+        for: 60s
+        labels:
+          severity: critical
+          team: fraud-platform
+        annotations:
+          summary: "Feature store materialization lag exceeds 30 seconds"
+          description: >
+            The feature_materialization_lag_ms gauge has exceeded 30,000 ms for
+            60 consecutive seconds, indicating the Feast materialization pipeline
+            has stalled. Feature vectors in the online store may be stale.
+            Scoring engine is operating on potentially outdated features.
+          runbook_url: "docs/runbooks/OBSERVABILITY_RUNBOOK.md"

@@ -116,6 +116,17 @@ A dedicated, independent consumer component owns all reporting and interactive a
 - Streamlit sessions MUST NOT cache PII beyond the minimum required to render the current view; masked values from Iceberg are displayed as-is  
 - The analytics service is non-critical-path: its unavailability MUST NOT affect fraud scoring SLOs
 
+### XI. Feature Serving Contract (NON-NEGOTIABLE)
+The online feature store is a first-class pipeline component — it is read on the scoring hot path and its availability, latency, and correctness directly affect the 100ms decision budget.  
+- **Read path SLO**: Online feature retrieval MUST complete within **2ms at p99** per lookup; this is a hard sub-slice of the 5ms hot store allocation in Principle II — a retrieval exceeding 2ms is treated as a budget breach, not a warning  
+- **Client timeout and fallback**: The scoring engine MUST set a client-side timeout of **3ms** on every online store read; on timeout or store unavailability, the engine MUST fall back to zero-valued features (not stale features, not a request failure) and MUST increment a `feature_store_fallback_total` counter — silent fallback to stale values is prohibited because stale velocity counts can suppress legitimate fraud signals  
+- **Staleness bound**: Features read from the online store MUST reflect an enrichment cycle completed within the last **30 seconds**; if staleness of any feature exceeds this bound (detectable via `feature_materialization_lag_ms`), a Prometheus alert fires before the next model deployment  
+- **Write path ownership**: The online store is written exclusively by the Feast materialization push in the enrichment job — no other component may write feature values directly; the scoring engine is strictly read-only relative to the store  
+- **Cold-start policy**: On pipeline startup or Flink job recovery, the online store may be empty or stale; the scoring engine MUST treat a cache miss as zero-valued features (not an error) and log each miss as a `feature_store_miss` event — the rule engine still fires on transaction fields available in the record itself  
+- **Event timestamp on write**: Feature values MUST be pushed using the Kafka event timestamp as `event_timestamp` (not wall-clock time at flush) — enforcing FR-024 at the constitution level; the Feast push call MUST use `PushMode.ONLINE_AND_OFFLINE` with `event_timestamp_column='event_ts'`  
+- **Backend contract**: The online store backend MUST support sub-2ms point lookups by entity key (`account_id`) at expected peak load; Redis (Feast Redis online store) satisfies this contract locally and in cloud — any alternative requires a load test proving p99 < 2ms before production
+
+
 ---
 
 ## Data Contracts
@@ -246,7 +257,7 @@ Services are tiered. **Core** services start with `make bootstrap` and are requi
 | State backend | **RocksDB (`EmbeddedRocksDBStateBackend`, incremental)** | **Core** | Heap backend rejected — see Design Decisions §2 |
 | PostgreSQL | PostgreSQL (Docker) | **Core** | `fraud_alerts` operational store only |
 | Observability | Prometheus + Grafana (Docker) | **Core** | Metrics at `:8002/metrics`, dashboards at `:3000` |
-| Hot store | Redis (Docker) | **Core** | 24h TTL on all velocity keys |
+| Hot store / online feature store | Redis (Docker) | **Core** | Hot store: 24h TTL velocity keys (`hot:*`); Feast online store: feature vectors (`feast:*`) — shared instance, separate key namespaces |
 | Event store | MinIO + Apache Iceberg | **Analytics** | S3-compatible; Flink checkpoints also stored here |
 | Analytics query engine | Trino (Docker) | **Analytics** | Bulk queries and >7-day scans over Iceberg on MinIO |
 | In-process analytics | DuckDB (`duckdb-iceberg` extension) | **Analytics** | Streamlit session queries, interactive drilldown, <7-day scans |
@@ -262,7 +273,8 @@ Services are tiered. **Core** services start with `make bootstrap` and are requi
 | Message broker | Confluent Cloud · AWS MSK · GCP Pub/Sub |
 | Stream processing | PyFlink on Kubernetes |
 | State backend | RocksDB + incremental checkpoints to S3/GCS |
-| Hot store | AWS ElastiCache (Redis) · Aerospike |
+| Hot store | AWS ElastiCache (Redis) · Aerospike — separate instance from online feature store in production |
+| Online feature store | AWS ElastiCache (Redis) · GCP Memorystore · Aerospike (Feast connector) — sub-2ms p99 required |
 | Event store | S3/GCS + Apache Iceberg · Delta Lake |
 | Feature store | Feast on K8s · Hopsworks · Tecton |
 | Analytics query engine | AWS Athena · GCP BigQuery · Trino on K8s |
@@ -419,6 +431,14 @@ These decisions are architectural law — they represent choices made with full 
 **Rejected**: `PyFlink MetricGroup` (Python metric objects not shared with main-process HTTP server — JVM workers and Python driver have separate `prometheus_client` registries), `PROMETHEUS_MULTIPROC_DIR` (PyFlink workers are JVM-spawned and do not write `.db` files to the multiprocess dir), push gateway (stateful middleman; aggregation semantics differ).  
 **Tradeoff accepted**: ~100–500ms metric lag between a rule firing and the counter being visible in Prometheus. Acceptable for operational dashboards; not suitable for sub-second alerting.
 
+### DD-10. Online feature store backend — Redis via Feast
+**Rejected**: PostgreSQL as online store (10–50ms query latency — incompatible with 2ms p99 SLO). In-memory dict in the Flink operator (lost on TaskManager restart; not shared across parallel scoring instances). Re-computing features at scoring time (duplicates enrichment work; adds 20–50ms to hot path; violates single-enrichment-cycle principle). Hopsworks/Tecton locally (no lightweight Docker image; operational overhead incompatible with Analytics tier isolation).  
+**Chose**: Feast with Redis online backend — locally the same Redis Docker instance as the hot store using a separate `feast:` key namespace; in production a dedicated Redis-compatible instance (AWS ElastiCache, GCP Memorystore, or Aerospike with Feast connector).  
+**Tradeoff accepted**: Locally, Redis is a shared dependency — hot store velocity keys and Feast feature vectors co-exist on the same instance. Key namespace isolation (`feast:` prefix enforced by Feast) prevents collision, but a Redis OOM event affects both. Mitigation: `maxmemory-policy allkeys-lru` with a memory cap sized for both namespaces combined. In production these MUST be separate Redis instances — the feature serving SLO (2ms p99) and the hot store TTL semantics are operationally incompatible under shared memory pressure.  
+**Read latency profile**: Redis GET on a ~1KB feature vector: ~0.1–0.3ms local socket, ~0.5–1ms cross-AZ in cloud. Feast client serialisation/deserialisation overhead: ~0.2–0.5ms. Expected p99 read latency: ~0.8–1.5ms — leaves ~0.5ms headroom against the 2ms SLO.  
+**Cold-start and miss handling**: On Flink recovery, the online store may be partially stale. Scoring engine treats every cache miss as zero-valued features and logs a `feature_store_miss` event — this is safer than using stale velocity counts which could suppress a fraud signal that should fire. Zero-valued features cause the ML model to produce a neutral score; the rule engine still evaluates deterministic rules against the raw transaction fields.
+
+
 ---
 
 ## Non-Negotiables (Pre-Production Checklist)
@@ -444,6 +464,10 @@ These decisions are architectural law — they represent choices made with full 
 - [ ] Schema compatibility mode — Schema Registry compatibility set to `BACKWARD_TRANSITIVE` for all FraudStream subjects; verified before first production topic registration
 - [ ] Non-breaking schema additions tested — `tests/contract/` passes for both backward (new producer, old consumer) and forward (old producer, new consumer) directions before any schema version is promoted
 - [ ] `txn.enriched` Avro migration complete — JSON drift resolved; topic produces Avro before v2.0 production promotion (hard deadline per Principle III)
+- [ ] Online feature store read SLO — Feast Redis read p99 < 2ms verified under 2× expected peak load; `feature_store_fallback_total` counter is zero under normal operation
+- [ ] Feature staleness alert — `feature_materialization_lag_ms` Prometheus alert fires correctly when lag exceeds 30 seconds; verified in staging
+- [ ] Cold-start behaviour verified — pipeline recovery test confirms `feature_store_miss` events are logged and zero-valued fallback is applied without scoring errors or latency spikes
+- [ ] Production Redis separation — online feature store and hot store run on separate Redis instances in staging/production; shared-instance configuration is local-only
 
 ---
 
@@ -461,4 +485,4 @@ All pull requests must include a checklist item confirming compliance with the r
 
 ---
 
-**Version**: 1.5.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-18
+**Version**: 1.6.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-18

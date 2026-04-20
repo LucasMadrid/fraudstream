@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 
+from pipelines.scoring.metrics import feature_materialization_lag_ms
+
 logger = logging.getLogger(__name__)
 dlq_logger = logging.getLogger("dlq")
 
@@ -525,6 +527,15 @@ try:  # pragma: no cover
             except Exception as e:
                 logger.error(f"Failed to push device features to Feast: {e}", exc_info=True)
 
+            # Update staleness gauge so FeatureStoreStalenessHigh alert can fire
+            try:
+                now_ms = time.time() * 1000
+                last_ms = getattr(self, "_last_feast_push_ms", now_ms)
+                feature_materialization_lag_ms.set(now_ms - last_ms)
+                self._last_feast_push_ms = now_ms
+            except Exception as e:
+                logger.debug("feature_materialization_lag_ms update failed", exc_info=e)
+
 except ImportError:
     # PyFlink not installed — plain-Python fallback for unit tests
     _HAS_PYFLINK = False
@@ -941,3 +952,12 @@ except ImportError:
                     exc_info=True,
                 )
                 raise
+
+            # Update staleness gauge so FeatureStoreStalenessHigh alert can fire
+            try:
+                now_ms = time.time() * 1000
+                last_ms = getattr(self, "_last_feast_push_ms", now_ms)
+                feature_materialization_lag_ms.set(now_ms - last_ms)
+                self._last_feast_push_ms = now_ms
+            except Exception as e:
+                logger.debug("feature_materialization_lag_ms update failed", exc_info=e)
