@@ -13,6 +13,7 @@ Stop fraud before it lands. FraudStream processes payment transactions in millis
   - [Fraud Rule Families](#fraud-rule-families)
   - [Alert Persistence](#alert-persistence)
   - [Analytics Persistence Layer](#analytics-persistence-layer)
+  - [Feature Serving Contract](#feature-serving-contract)
 - [Services](#services)
 - [Configuration](#configuration)
   - [Fraud Rules](#fraud-rules)
@@ -42,6 +43,7 @@ Stop fraud before it lands. FraudStream processes payment transactions in millis
   - [8. Alert Persistence](#8-alert-persistence--dual-sink-kafka--postgresql)
   - [9. Metrics Bridge](#9-metrics-bridge--daemon-consumer-threads)
   - [10. Analytics Persistence](#10-analytics-persistence--apache-iceberg--pyiceberg-over-flink-iceberg-connector)
+  - [11. Feature Serving Contract](#11-feature-serving-contract--featureservingclient-with-3ms-timeout)
 
 ---
 
@@ -194,6 +196,23 @@ Four pre-built analyst views ship in `analytics/views/`:
 
 **Schema evolution**: The CI pipeline (`schema-evolution.yml`) blocks merges if Avro schema changes break alignment with the Iceberg DDL or Feast feature views, detected by `scripts/evolve_iceberg_schema.py` and `scripts/validate_feast_schemas.py`.
 
+### Feature Serving Contract
+
+The `FeatureServingClient` (`pipelines/scoring/clients/feature_serving.py`) wraps the Feast online store with a **3ms hard timeout** enforced via `concurrent.futures.ThreadPoolExecutor`. Every call to `get_features()` returns a `FeatureVector` — never raises. On timeout, store outage, or cache miss the client returns `ZERO_FEATURE_VECTOR` and increments the appropriate Prometheus counter.
+
+**Fallback tiers**:
+
+| Condition | Counter | Returned value |
+|---|---|---|
+| Store responds with all `None` values (new account) | `feature_store_miss_total` | `ZERO_FEATURE_VECTOR` |
+| Any field is `None` (partial response) | `feature_store_miss_total` | `ZERO_FEATURE_VECTOR` |
+| Response exceeds 3ms timeout | `feature_store_fallback_total{reason="timeout"}` | `ZERO_FEATURE_VECTOR` |
+| Store raises any exception | `feature_store_fallback_total{reason="unavailable"}` | `ZERO_FEATURE_VECTOR` |
+
+The client is wired into the Flink scoring job via `_FeatureEnrichmentFunction` (a `MapFunction` in `pipelines/scoring/job_extension.py`). The `FeatureStoreStalenessHigh` Prometheus alert fires when `feature_materialization_lag_ms` exceeds 30 s for a full 60 s window, indicating that the Feast push source has stalled.
+
+See [`specs/007-feature-serving-contract/quickstart.md`](specs/007-feature-serving-contract/quickstart.md) for runnable seed + invocation examples covering all four scenarios.
+
 ---
 
 ## Services
@@ -318,6 +337,10 @@ The Flink job exposes Prometheus metrics at `:8002/metrics`. A **Kafka metrics b
 | `iceberg_write_errors_total` | `table` | Iceberg write failures (circuit breaker feeds from this) |
 | `iceberg_flush_duration_seconds` | `table` | Flush latency histogram (p99 must stay below 4 s) |
 | `feast_push_failures_total` | — | Feast Push API call failures |
+| `feature_store_retrieval_seconds` | — | Histogram of Feast online read latency (p99 target < 3ms) |
+| `feature_store_fallback_total` | `reason` (`timeout`, `unavailable`) | Feature vector fallbacks to zero-value |
+| `feature_store_miss_total` | — | Cache misses (all-`None` or partial response from online store) |
+| `feature_materialization_lag_ms` | — | Gauge: staleness of the online store vs. last enrichment push |
 
 ### Dashboards and Alerts
 
@@ -325,6 +348,8 @@ The Flink job exposes Prometheus metrics at `:8002/metrics`. A **Kafka metrics b
 - **Prometheus alert rules** in `infra/prometheus/alerts/fraud_rule_engine.yml`:
   - `FraudFlagRateZero` — fires when `rule_flags_total` drops to zero for an extended period (possible silent evaluator failure)
   - `DLQDepthHigh` — fires when DLQ topic depth grows above threshold
+- **Prometheus alert rules** in `infra/prometheus/alerts/feature_serving.yml`:
+  - `FeatureStoreStalenessHigh` — fires when `feature_materialization_lag_ms > 30000` for 60 s (Feast push source stalled)
 
 Monitor `iceberg_flush_duration_seconds` p99: if it approaches 4 s, reduce `ICEBERG_FLUSH_INTERVAL_S` or scale the MinIO instance.
 
@@ -436,8 +461,13 @@ pipelines/
       alert_postgres.py           # AlertPostgresSink — INSERT INTO fraud_alerts
       iceberg_decisions.py        # IcebergDecisionsSink — side output → iceberg.fraud_decisions
     schemas/                      # fraud-alert-v1.avsc, fraud-alert-dlq-v1.avsc
-    types.py                      # FraudDecision dataclass (ALLOW/FLAG/BLOCK)
-    metrics.py                    # rule_evaluations_total, rule_flags_total
+    clients/                        # Feature 007 — Feature serving contract
+      feature_serving.py          # FeatureServingClient (3ms timeout, zero-value fallback)
+    job_extension.py              # _FeatureEnrichmentFunction (Flink MapFunction wrapper)
+    types.py                      # FraudDecision dataclass + FeatureVector + ZERO_FEATURE_VECTOR
+    metrics.py                    # rule_evaluations_total, rule_flags_total,
+    │                             #   feature_store_fallback_total, feature_store_miss_total,
+    │                             #   feature_store_retrieval_seconds, feature_materialization_lag_ms
     config.py                     # ScoringConfig (env-driven dataclass)
 
 storage/                          # Feature 006 — Analytics persistence layer
@@ -491,6 +521,7 @@ infra/
     prometheus.yml                # Scrape config (job :8002, Kafka exporter)
     alerts/
       fraud_rule_engine.yml       # FraudFlagRateZero + DLQDepthHigh alert rules
+      feature_serving.yml         # FeatureStoreStalenessHigh alert rule (Feature 007)
   grafana/
     provisioning/                 # Auto-provisioned datasource + fraud dashboard
   geoip/                          # GeoLite2-City.mmdb (gitignored; make update-geoip)
@@ -505,6 +536,7 @@ tests/
     scoring/                      # Rule families, evaluator, sinks, metrics
     test_pii_masker.py            # PII masking unit tests
     test_producer.py              # Producer unit tests
+    test_feature_serving_client.py# FeatureServingClient unit tests (13 tests)
   integration/
     test_api_ingestion.py         # End-to-end ingestion with real Kafka
     test_enrichment_pipeline.py   # Flink operator integration tests
@@ -514,6 +546,7 @@ tests/
     test_feast_materialization.py # Feast push + PIT feature lookup
     test_circuit_breaker.py       # Iceberg circuit breaker state transitions
     test_catalog_failure.py       # Catalog failure handling
+    test_feature_serving.py       # Feature serving integration tests (SQLite online store)
   contract/
     test_schema_contracts.py      # Avro schema contract tests
     test_avro_iceberg_alignment.py# Avro ↔ Iceberg DDL alignment
@@ -531,6 +564,8 @@ specs/
   004-operational-excellence/     # Spec (in progress)
   006-analytics-persistence-layer/# Spec, plan, research, data-model, contracts,
                                   #   quickstart, tasks (44 tasks, all complete)
+  007-feature-serving-contract/   # Spec, plan, tasks, quickstart (feature serving
+                                  #   FeatureServingClient + 3ms timeout + Prometheus alerts)
 
 .github/
   workflows/
@@ -685,3 +720,20 @@ specs/
 **Circuit breaker**: `pybreaker` wraps each `table.append()` call — 3 consecutive failures open the breaker, protecting the Flink job from cascading failures if MinIO or the catalog becomes unavailable. The breaker moves to HALF_OPEN after 30s and resets on a successful write.
 
 **Tradeoff accepted**: PyIceberg writes are synchronous within the flush call; large batches or slow MinIO I/O can increase flush latency. At `ICEBERG_FLUSH_INTERVAL_S=1` and `ICEBERG_BUFFER_MAX=100`, worst-case flush delay is just under 1 second. The 5-second budget leaves ample margin. Do not increase `ICEBERG_FLUSH_INTERVAL_S` above 4 seconds.
+
+---
+
+### 11. Feature Serving Contract — `FeatureServingClient` with 3ms Timeout
+
+**Chose**: `FeatureServingClient` wrapping `feast.FeatureStore.get_online_features()` via `concurrent.futures.ThreadPoolExecutor` with `future.result(timeout=0.003)`
+
+| Alternative | Why rejected |
+|---|---|
+| Direct `feast.FeatureStore` calls in the Flink operator | No enforced timeout — a slow Redis/SQLite response blocks the scoring thread indefinitely |
+| `asyncio` + `asyncio.wait_for` | PyFlink operators run in synchronous Beam Fn API callbacks — `asyncio` event loop is not available |
+| `signal.alarm` (POSIX timeout) | Not safe in multi-threaded environments; raises in the wrong thread under PyFlink's JVM–Python bridge |
+| Custom gRPC feature service | Operational overhead not justified for Phase 1; Feast already provides the abstraction |
+
+**Fallback contract**: Every code path through `get_features()` returns a `FeatureVector` — exceptions are caught at the `future.result()` boundary and at the executor level. The scoring rule engine always receives a valid object; it never sees `None` or raises on feature unavailability.
+
+**Tradeoff accepted**: The `ThreadPoolExecutor(max_workers=1)` means only one outstanding Feast call at a time per `FeatureServingClient` instance. Under load, requests queue behind the pool. At 3ms timeout this is effectively bounded — the pool thread is released (or times out) before the next Flink operator invocation at normal throughput. A timed-out future leaves the background thread running until Feast responds or times out internally; executor `shutdown(wait=False)` at job teardown is intentional to avoid a blocking drain.
