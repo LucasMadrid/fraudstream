@@ -62,9 +62,7 @@ class FeatureServingClient:
         import feast
 
         self._store = feast.FeatureStore(repo_path=self._repo_path)
-        self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=self._executor_workers
-        )
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._executor_workers)
 
     def close(self) -> None:
         if self._executor is not None:
@@ -154,9 +152,7 @@ class FeatureServingClient:
                 geo_confidence=float(values.get("geo_confidence") or 0.0),
                 device_first_seen=int(values.get("device_first_seen") or 0),
                 device_txn_count=int(values.get("device_txn_count") or 0),
-                device_known_fraud=bool(
-                    values.get("device_known_fraud") or False
-                ),
+                device_known_fraud=bool(values.get("device_known_fraud") or False),
                 prev_geo_country=str(values.get("prev_geo_country") or ""),
                 prev_txn_time_ms=int(values.get("prev_txn_time_ms") or 0),
             )
@@ -164,9 +160,7 @@ class FeatureServingClient:
         except concurrent.futures.TimeoutError:
             elapsed = time.perf_counter() - start
             feature_store_retrieval_seconds.observe(elapsed)
-            feature_store_fallback_total.labels(
-                reason=FallbackReason.TIMEOUT.value
-            ).inc()
+            feature_store_fallback_total.labels(reason=FallbackReason.TIMEOUT.value).inc()
             logger.warning(
                 "feature_store_fallback",
                 extra={
@@ -184,9 +178,7 @@ class FeatureServingClient:
         except Exception as exc:
             elapsed = time.perf_counter() - start
             feature_store_retrieval_seconds.observe(elapsed)
-            feature_store_fallback_total.labels(
-                reason=FallbackReason.UNAVAILABLE.value
-            ).inc()
+            feature_store_fallback_total.labels(reason=FallbackReason.UNAVAILABLE.value).inc()
             logger.warning(
                 "feature_store_fallback",
                 extra={
