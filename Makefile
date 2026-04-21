@@ -15,8 +15,9 @@ KAFKA_CONNECTOR_URL     := https://repo1.maven.org/maven2/org/apache/flink/flink
         infra-restart infra-restart-grafana infra-restart-prometheus \
         topics bootstrap update-geoip download-jars \
         flink-job flink-job-analytics \
-        generate generate-suspicious simulate-alerts consume \
+        generate generate-suspicious simulate-alerts consume generate-dlq \
         analytics-counts analytics-join analytics-feast analytics-verify \
+        analytics-up analytics-down \
         install test test-unit test-integration
 
 # ── Infrastructure lifecycle ──────────────────────────────────────────────
@@ -172,6 +173,29 @@ analytics-feast:
 ## analytics-verify: run all three checks in sequence (counts + join sample + feast)
 analytics-verify: analytics-counts analytics-join analytics-feast
 
+# ── Analytics tier lifecycle ──────────────────────────────────────────────
+## trino-views: create or replace all analytics Trino views over Iceberg tables.
+## Requires Core tier (Trino) to be running. Safe to re-run at any time.
+trino-views:
+	@echo "Creating Trino views..."
+	@$(TRINO) --execute "$$(cat analytics/views/v_fraud_rate_daily.sql)"
+	@$(TRINO) --execute "$$(cat analytics/views/v_rule_triggers.sql)"
+	@$(TRINO) --execute "$$(cat analytics/views/v_model_versions.sql)"
+	@$(TRINO) --execute "$$(cat analytics/views/v_transaction_audit.sql)"
+	@echo "Trino views ready."
+
+## analytics-up: start the Analytics tier (Trino + Streamlit) alongside Core.
+## Requires Core tier to be running: make bootstrap first.
+analytics-up: trino-views
+	docker compose -f infra/docker-compose.yml --profile analytics up -d --build streamlit
+	@echo "Streamlit: http://localhost:8501"
+	@echo "Metrics:   http://localhost:8004/metrics"
+
+## analytics-down: stop the Analytics tier only; Core tier remains running.
+analytics-down:
+	docker compose -f infra/docker-compose.yml --profile analytics stop streamlit
+	docker compose -f infra/docker-compose.yml --profile analytics rm -f streamlit
+
 # ── Data generation ──────────────────────────────────────────────────────
 ## Runs forever by default (COUNT=0). Override: COUNT=50 DELAY=200 make generate
 ## SUSPICIOUS_RATE=0 make generate   → disable suspicious injection
@@ -211,6 +235,13 @@ simulate-alerts:
 	  echo "==> [wave $$wave] Complete. Starting next wave..."; \
 	  wave=$$((wave + 1)); \
 	done
+
+## Produce N synthetic DLQ messages to txn.api.dlq for DLQ Inspector testing.
+## COUNT=20 make generate-dlq   → change message count (default: 10)
+
+generate-dlq:
+	@echo "==> Producing $(or $(COUNT),10) DLQ noise messages to txn.api.dlq"
+	$(PYTHON) scripts/generate_dlq.py --count $(or $(COUNT),10)
 
 ## Tail txn.enriched without producing
 consume:

@@ -77,7 +77,7 @@ Every enriched transaction and every fraud decision MUST be durably persisted to
 - **Enriched transactions sink**: The stream processor MUST write each `EnrichedTransaction` record to an append-only Iceberg table (`iceberg.enriched_transactions`) in addition to publishing to the Kafka output topic — the write is a mandatory side output, not optional  
 - **Fraud decisions sink**: The scoring engine MUST write each `ScoringOutput` record (decision, fraud score, rule triggers, model version, latency) to a separate Iceberg table (`iceberg.fraud_decisions`) keyed by `transaction_id`  
 - **Feature materialization**: Computed velocity, geolocation, and device fingerprint features MUST be materialized to the Feast feature store on every enrichment cycle, making them available for both online serving (low-latency lookup during inference) and offline training (point-in-time correct feature snapshots)  
-- **Analytics query layer**: An always-on SQL query engine (Trino locally; Athena/BigQuery in cloud) MUST be able to join `enriched_transactions` and `fraud_decisions` on `transaction_id` without requiring custom code — schema evolution in Iceberg tables follows the same Schema Registry versioning discipline as Kafka topics  
+- **Analytics query layer**: Two complementary SQL engines serve different access patterns — **DuckDB** (in-process, PyIceberg → Arrow → DuckDB) for Streamlit interactive queries and short rolling windows (≤ 30 days); **Trino** (Docker/cloud) for ad-hoc exploration, cross-table joins exceeding Streamlit session memory, and > 30-day historical scans. Both MUST be able to join `enriched_transactions` and `fraud_decisions` on `transaction_id` without requiring custom code — schema evolution in Iceberg tables follows the same Schema Registry versioning discipline as Kafka topics  
 - **No analytics-only writes to Kafka**: Iceberg is the analytics source of truth; ad-hoc analytics pipelines MUST NOT re-consume raw Kafka topics as a substitute for a missing persistence layer  
 - **Write latency budget**: Iceberg sink writes MUST complete within 5 seconds of the Kafka consumer receipt — this is outside the 100ms scoring hot path and MUST NOT add latency to the decision response
 
@@ -86,20 +86,21 @@ A dedicated, independent consumer component owns all reporting and interactive a
 
 **Data sources (dual-mode):**
 - **Real-time feed** — Kafka consumer on `txn.fraud.alerts` for live dashboards (sub-second event visibility); consumer group `analytics.dashboard` with `auto.offset.reset = latest`  
-- **Historical store** — Trino queries over `iceberg.enriched_transactions` and `iceberg.fraud_decisions` for reports, drill-down, and ML audit  
+- **Historical store** — **DuckDB** (in-process via PyIceberg → Arrow → DuckDB) for Streamlit interactive queries and rolling windows ≤ 30 days; **Trino** for ad-hoc exploration, cross-table joins exceeding Streamlit session memory, and > 30-day historical scans — both query `iceberg.enriched_transactions` and `iceberg.fraud_decisions`  
 - **Note**: `txn.decisions` is a planned topic (see Kafka Topic Inventory). Until it is built, the real-time feed consumes `txn.fraud.alerts` as the live decision signal
 
 **Reporting tools hierarchy:**
 | Layer | Tool | Purpose |
 |---|---|---|
 | Interactive app | **Streamlit** | Primary UI — live fraud dashboard, historical reports, and (future) rule engine config |
+| Streamlit query engine | **DuckDB** | In-process analytics (PyIceberg → Arrow → DuckDB) for all Streamlit historical pages; no external container or DNS dependency |
 | Operational metrics | Grafana | Infrastructure / SLO dashboards (latency, DLQ, throughput) — unchanged |
-| Ad-hoc SQL | Trino | Data team exploration and scheduled report queries |
+| Ad-hoc SQL | Trino | Data team exploration, cross-table joins > Streamlit session memory, > 30-day historical scans |
 | BI (optional) | Apache Superset | Self-serve dashboards for non-engineering stakeholders |
 
 **Streamlit app responsibilities (v1):**
 - Live transaction feed with decision overlay (real-time Kafka consumer, refreshed via `st.empty()` loop)  
-- Fraud rate by channel, merchant, and geo over configurable rolling windows (Trino → Iceberg)  
+- Fraud rate by channel, merchant, and geo over configurable rolling windows (DuckDB ← PyIceberg ← Iceberg)  
 - Rule trigger frequency leaderboard — which rules fire most, false-positive rate per rule  
 - Model version comparison — fraud score distribution per model version over a chosen time range  
 - DLQ inspector — browse dead-letter records without direct Kafka access
@@ -321,7 +322,7 @@ fraudstream/                          # github.com/LucasMadrid/fraudstream
 │   │   └── Home.py                   # entry point, shared Kafka/Trino client init
 │   ├── consumers/                    # Kafka consumer wrapper (group: analytics.dashboard)
 │   ├── queries/                      # Trino SQL query library (parameterized, versioned)
-│   └── reports/                      # scheduled report definitions (cron + Trino queries)
+│   └── reports/                      # scheduled report definitions (cron + DuckDB queries)
 ├── docs/                             # Architecture diagrams, ADRs
 ├── infra/
 │   ├── docker-compose.yml            # full local stack
@@ -439,6 +440,12 @@ These decisions are architectural law — they represent choices made with full 
 **Cold-start and miss handling**: On Flink recovery, the online store may be partially stale. Scoring engine treats every cache miss as zero-valued features and logs a `feature_store_miss` event — this is safer than using stale velocity counts which could suppress a fraud signal that should fire. Zero-valued features cause the ML model to produce a neutral score; the rule engine still evaluates deterministic rules against the raw transaction fields.
 
 
+### DD-11. Streamlit query engine — DuckDB (in-process) over Trino (external)
+**Rejected**: Trino container for Streamlit interactive queries — production incidents showed DNS resolution failures for the `trino` hostname within Docker networks after container restarts; Iceberg REST catalog SQLite lock contention causing `SQLITE_BUSY` errors under concurrent view creation; OOM kills requiring `mem_limit: 3g` and JVM tuning (`-Xms256m -Xmx1500m`). All of this complexity is borne by Streamlit alone — the data team uses Trino for ad-hoc SQL exploration, not for app-serving.  
+**Chose**: DuckDB in-process — PyIceberg loads Iceberg table snapshots from MinIO as Arrow tables; DuckDB registers them as views and executes SQL in the same Python process as Streamlit. No external container, no network DNS, no JVM. Sub-second query latency for rolling windows ≤ 30 days with typical data volumes.  
+**Tradeoff accepted**: DuckDB lives in Streamlit's process — a large scan can spike memory and slow the page. Mitigation: always push time-window predicates into the PyIceberg `scan()` call (partition pruning before Arrow materialisation), cap rolling windows at 30 days in Streamlit, and document that queries > 30 days belong in Trino. Trino remains the authoritative ad-hoc query tool for the data team.  
+**Scope**: Only the three Streamlit pages that previously called `trino-python-client` are affected — `2_fraud_rate.py`, `3_rule_triggers.py`, `4_model_compare.py`. The DLQ inspector and live feed pages are unaffected (no Trino calls). Trino stays in the stack for data team exploration and the analytics views defined in `analytics/views/`.
+
 ---
 
 ## Non-Negotiables (Pre-Production Checklist)
@@ -457,7 +464,7 @@ These decisions are architectural law — they represent choices made with full 
 - [ ] Point-in-time correctness — offline Feast feature snapshots for a replayed event sequence match the values observed at enrichment time (no future leakage)
 - [ ] Analytics consumer isolation verified — `analytics.dashboard` consumer group offset does not interfere with scoring or processing consumer groups under load
 - [ ] Streamlit live feed lag — real-time dashboard reflects a new alert within 2 seconds of it being published to `txn.fraud.alerts` under normal load
-- [ ] Streamlit historical report accuracy — fraud rate figures from Streamlit/Trino match figures from a direct Iceberg table scan for the same time window (zero discrepancy)
+- [ ] Streamlit historical report accuracy — fraud rate figures from Streamlit/DuckDB match figures from a direct Iceberg table scan for the same time window (zero discrepancy)
 - [ ] Analytics service failure isolation — taking down the Streamlit service and Trino container has zero effect on fraud scoring latency and throughput SLOs
 - [ ] Management API secured — `MANAGEMENT_API_KEY` set in all non-dev environments; rate limits verified under load
 - [ ] GeoIP database current — `GeoLite2-City.mmdb` present and < 30 days old before any production deployment
@@ -485,4 +492,4 @@ All pull requests must include a checklist item confirming compliance with the r
 
 ---
 
-**Version**: 1.6.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-18
+**Version**: 1.7.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-21

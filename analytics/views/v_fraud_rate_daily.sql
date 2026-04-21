@@ -20,12 +20,12 @@ enriched AS (
     FROM iceberg.default.enriched_transactions
 )
 SELECT
-    CAST(from_unixtime(d.decision_time_ms / 1000) AS DATE) AS decision_date,
+    CAST(d.decision_time_ms AS DATE)      AS decision_date,
     e.channel,
     d.decision,
-    COUNT(*)                            AS transaction_count,
-    SUM(e.amount)                       AS total_amount,
-    AVG(d.fraud_score)                  AS avg_fraud_score,
+    COUNT(*)                              AS transaction_count,
+    SUM(e.amount)                         AS total_amount,
+    AVG(d.fraud_score)                    AS avg_fraud_score,
     APPROX_PERCENTILE(d.latency_ms, 0.99) AS p99_latency_ms
 FROM decisions d
 JOIN enriched e
@@ -33,6 +33,6 @@ JOIN enriched e
    AND e.rn = 1
 WHERE d.rn = 1
 GROUP BY
-    CAST(from_unixtime(d.decision_time_ms / 1000) AS DATE),
+    CAST(d.decision_time_ms AS DATE),
     e.channel,
     d.decision;

@@ -1,0 +1,29 @@
+groups:
+  - name: analytics_consumer
+    rules:
+      - alert: AnalyticsConsumerLagHigh
+        expr: analytics_consumer_lag{consumer_group="analytics.dashboard"} > 1000
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Analytics consumer lag is high"
+          description: >-
+            Consumer group {{ $labels.consumer_group }} on topic {{ $labels.topic }}
+            has a lag of {{ $value | humanize }} messages for more than 2 minutes.
+            This may indicate the analytics Streamlit app is down or processing slowly.
+          runbook_url: "https://github.com/LucasMadrid/fraudstream/wiki/runbooks/analytics-consumer-lag"
+
+      - alert: AnalyticsConsumerDown
+        expr: absent(analytics_consumer_lag{consumer_group="analytics.dashboard"}) == 1
+        for: 3m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Analytics consumer metrics absent"
+          description: >-
+            No analytics_consumer_lag metric has been scraped for 3 minutes.
+            The analytics Streamlit container may have crashed or is unreachable.
+          runbook_url: "https://github.com/LucasMadrid/fraudstream/wiki/runbooks/analytics-consumer-down"

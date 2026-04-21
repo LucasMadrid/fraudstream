@@ -51,14 +51,14 @@ scoring = [
     "slowapi>=0.1.9",
 ]
 analytics = [
-    "pyiceberg[pyarrow,s3fs]>=0.7",
-    "feast>=0.54.0",
     "trino>=0.328",
-    "apache-flink>=2.0",
     "confluent-kafka[schema-registry]>=2.3",
     "fastavro>=1.9",
     "prometheus-client>=0.20",
     "pybreaker==1.4.1",
+    "streamlit>=1.35",
+    "duckdb>=0.10",
+    "pandas>=2.0",
 ]
 
 [tool.setuptools.packages.find]
