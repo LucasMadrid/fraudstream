@@ -1,5 +1,6 @@
 """Live fraud alert feed — streams from the analytics Kafka consumer queue."""
 
+import queue
 import time
 from collections import deque
 
@@ -42,7 +43,7 @@ if consumer is None or not consumer.is_alive():
 if "live_feed_buffer" not in st.session_state:
     st.session_state["live_feed_buffer"] = deque(maxlen=DEQUE_MAX)
 if "live_feed_seen" not in st.session_state:
-    st.session_state["live_feed_seen"] = set()
+    st.session_state["live_feed_seen"] = set()  # capped to DEQUE_MAX entries below
 
 buf: deque[FraudAlertDisplay] = st.session_state["live_feed_buffer"]
 seen: set[str] = st.session_state["live_feed_seen"]
@@ -56,7 +57,9 @@ while True:
             buf.appendleft(alert)
             seen.add(alert.transaction_id)
             new_count += 1
-    except Exception:
+        if len(seen) > DEQUE_MAX:
+            seen.discard(next(iter(seen)))
+    except queue.Empty:
         break
 
 # ── controls ─────────────────────────────────────────────────────────────────

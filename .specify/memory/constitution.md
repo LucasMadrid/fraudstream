@@ -90,6 +90,7 @@ A dedicated, independent consumer component owns all reporting and interactive a
 - **Note**: `txn.decisions` is a planned topic (see Kafka Topic Inventory). Until it is built, the real-time feed consumes `txn.fraud.alerts` as the live decision signal
 
 **Reporting tools hierarchy:**
+
 | Layer | Tool | Purpose |
 |---|---|---|
 | Interactive app | **Streamlit** | Primary UI — live fraud dashboard, historical reports, and (future) rule engine config |
@@ -441,6 +442,7 @@ These decisions are architectural law — they represent choices made with full 
 
 
 ### DD-11. Streamlit query engine — DuckDB (in-process) over Trino (external)
+
 **Rejected**: Trino container for Streamlit interactive queries — production incidents showed DNS resolution failures for the `trino` hostname within Docker networks after container restarts; Iceberg REST catalog SQLite lock contention causing `SQLITE_BUSY` errors under concurrent view creation; OOM kills requiring `mem_limit: 3g` and JVM tuning (`-Xms256m -Xmx1500m`). All of this complexity is borne by Streamlit alone — the data team uses Trino for ad-hoc SQL exploration, not for app-serving.  
 **Chose**: DuckDB in-process — PyIceberg loads Iceberg table snapshots from MinIO as Arrow tables; DuckDB registers them as views and executes SQL in the same Python process as Streamlit. No external container, no network DNS, no JVM. Sub-second query latency for rolling windows ≤ 30 days with typical data volumes.  
 **Tradeoff accepted**: DuckDB lives in Streamlit's process — a large scan can spike memory and slow the page. Mitigation: always push time-window predicates into the PyIceberg `scan()` call (partition pruning before Arrow materialisation), cap rolling windows at 30 days in Streamlit, and document that queries > 30 days belong in Trino. Trino remains the authoritative ad-hoc query tool for the data team.  

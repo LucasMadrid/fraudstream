@@ -12,7 +12,10 @@ st.set_page_config(
 )
 
 BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-METRICS_PORT = int(os.environ.get("METRICS_PORT", "8004"))
+try:
+    METRICS_PORT = int(os.environ.get("METRICS_PORT", "8004"))
+except ValueError:
+    METRICS_PORT = 8004
 
 # Start Prometheus metrics server once per process
 start_metrics_server(METRICS_PORT)
