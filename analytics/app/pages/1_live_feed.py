@@ -29,6 +29,7 @@ _DECISION_COLOR = {
 
 
 def _get_consumer() -> AnalyticsKafkaConsumer | None:
+    """Return the AnalyticsKafkaConsumer stored in session state, or None."""
     return st.session_state.get("consumer")
 
 

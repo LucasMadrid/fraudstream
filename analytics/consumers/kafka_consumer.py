@@ -1,3 +1,5 @@
+"""Kafka consumer daemon that streams fraud alerts into an in-memory queue."""
+
 from __future__ import annotations
 
 import io
@@ -35,6 +37,8 @@ LAG_REFRESH_S = 5.0
 
 @dataclass
 class FraudAlertDisplay:
+    """Normalised view of a fraud alert for the Streamlit dashboard."""
+
     transaction_id: str
     account_id: str
     rule_triggers: list[str]
@@ -51,6 +55,7 @@ class FraudAlertDisplay:
 
 
 def _deserialize(raw_bytes: bytes) -> FraudAlertDisplay:
+    """Deserialize an Avro-encoded fraud alert and return a FraudAlertDisplay."""
     records = list(fastavro.reader(io.BytesIO(raw_bytes)))
     if not records:
         raise ValueError("Empty Avro container — no records")
@@ -97,6 +102,7 @@ class AnalyticsKafkaConsumer:
     # ── public API ──────────────────────────────────────────────────────────
 
     def start(self) -> None:
+        """Start the background consumer thread; idempotent if already running."""
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
@@ -106,19 +112,23 @@ class AnalyticsKafkaConsumer:
         self._thread.start()
 
     def stop(self) -> None:
+        """Signal the consumer thread to stop after the next poll cycle."""
         self._stop_event.set()
 
     def is_alive(self) -> bool:
+        """Return True if the consumer thread is currently running."""
         return self._thread is not None and self._thread.is_alive()
 
     @property
     def consumer_lag(self) -> int:
+        """Most-recently-measured unconsumed-message lag across all partitions."""
         with self._lag_lock:
             return self._lag
 
     # ── internal loop ───────────────────────────────────────────────────────
 
     def _build_consumer(self) -> Consumer:
+        """Construct and return a new confluent_kafka Consumer instance."""
         return Consumer(
             {
                 "bootstrap.servers": self._bootstrap,
@@ -130,6 +140,7 @@ class AnalyticsKafkaConsumer:
         )
 
     def _refresh_lag(self, consumer: Consumer) -> None:
+        """Recompute consumer lag at most once per LAG_REFRESH_S interval."""
         now = time.monotonic()
         if now - self._last_lag_refresh < LAG_REFRESH_S:
             return
@@ -163,6 +174,7 @@ class AnalyticsKafkaConsumer:
             pass
 
     def _run(self) -> None:
+        """Main loop: consume messages and reconnect on transient Kafka errors."""
         while not self._stop_event.is_set():
             consumer: Consumer | None = None
             try:

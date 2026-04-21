@@ -52,6 +52,7 @@ def _make_avro_bytes(
     severity="high",
     evaluation_timestamp=1_700_000_000_000,
 ) -> bytes:
+    """Build a schemaless Avro-encoded FraudAlert byte string for testing."""
     if matched_rule_names is None:
         matched_rule_names = ["VEL-001"]
     buf = io.BytesIO()
@@ -72,6 +73,8 @@ def _make_avro_bytes(
 # ── deserialization ──────────────────────────────────────────────────────────
 
 class TestDeserialize:
+    """Tests for the _deserialize Avro → FraudAlertDisplay conversion."""
+
     @patch("analytics.consumers.kafka_consumer._get_schema", return_value=_PARSED)
     def test_maps_fields_correctly(self, _mock):
         raw = _make_avro_bytes(severity="critical", matched_rule_names=["VEL-001", "ND-003"])
@@ -150,6 +153,8 @@ class TestBufferEviction:
 # ── restart counter ──────────────────────────────────────────────────────────
 
 class TestRestartCounter:
+    """Tests for consumer-thread restart behaviour on Kafka errors."""
+
     def test_restart_counter_increments_on_kafka_exception(self):
         from confluent_kafka import KafkaException as KE
 

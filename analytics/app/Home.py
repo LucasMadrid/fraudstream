@@ -1,3 +1,5 @@
+"""FraudStream Analytics home page — starts the Kafka consumer daemon and metrics server."""
+
 import os
 
 import streamlit as st

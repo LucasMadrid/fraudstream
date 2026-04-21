@@ -52,6 +52,7 @@ _PARSED_SCHEMA = fastavro.parse_schema(_RAW_SCHEMA)
 
 
 def _make_alert_bytes(txn_id: str = None, severity: str = "high") -> bytes:
+    """Return a schemaless Avro-encoded FraudAlert for use in integration tests."""
     buf = io.BytesIO()
     fastavro.schemaless_writer(
         buf,
@@ -69,11 +70,13 @@ def _make_alert_bytes(txn_id: str = None, severity: str = "high") -> bytes:
 
 @pytest.fixture(scope="module")
 def broker(kafka_container):
+    """Return the bootstrap server address from the running Kafka container."""
     return kafka_container.get_bootstrap_server()
 
 
 @pytest.fixture(scope="module", autouse=True)
 def create_topic(broker):
+    """Ensure the alert topic exists before any tests in this module run."""
     admin = AdminClient({"bootstrap.servers": broker})
     futures = admin.create_topics(
         [NewTopic(ALERT_TOPIC, num_partitions=1, replication_factor=1)]
@@ -86,6 +89,7 @@ def create_topic(broker):
 
 
 def _produce_n(broker: str, n: int = 5) -> list[str]:
+    """Produce n Avro-encoded alert messages and return their transaction IDs."""
     p = Producer({"bootstrap.servers": broker})
     ids = []
     for _ in range(n):

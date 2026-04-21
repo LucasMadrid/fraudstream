@@ -22,6 +22,7 @@ ERRORS = [
 
 
 def _make_payload() -> str:
+    """Return a JSON string with randomised transaction fields for a DLQ message."""
     return json.dumps(
         {
             "transaction_id": str(uuid.uuid4()),
@@ -37,6 +38,7 @@ def _make_payload() -> str:
 
 
 def main() -> None:
+    """Parse CLI args and produce synthetic DLQ messages to the configured topic."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=10)
     parser.add_argument("--brokers", default="localhost:9092")

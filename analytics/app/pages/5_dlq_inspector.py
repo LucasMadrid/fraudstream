@@ -18,6 +18,7 @@ FETCH_MAX = 100
 
 @st.cache_resource
 def _session_group() -> str:
+    """Return a stable ephemeral consumer-group ID for this Streamlit process."""
     return f"dlq-inspector-{uuid.uuid4().hex[:8]}"
 
 
