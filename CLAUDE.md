@@ -3,6 +3,10 @@
 Auto-generated from all feature plans. Last updated: 2026-04-21
 
 ## Active Technologies
+- Python 3.11 + DuckDB ≥ 1.0 (in-process, in-memory), PyIceberg 0.11.1 (existing), pyarrow (existing, transitive via PyIceberg), streamlit (existing), pandas (existing) (009-streamlit-duckdb-migration)
+- Apache Iceberg on MinIO — `iceberg.enriched_transactions`, `iceberg.fraud_decisions` (009-streamlit-duckdb-migration)
+- PyIceberg→Arrow→DuckDB query pattern for Streamlit historical pages; replaces trino-python-client in analytics/queries/ (009-streamlit-duckdb-migration)
+
 - Python 3.11 + Streamlit ≥1.35, DuckDB ≥0.10, pandas ≥2.0, confluent-kafka (Kafka consumer daemon), prometheus-client (metrics at :8004) (008-analytics-consumer-layer)
 - Apache Kafka topic `txn.fraud.alerts`, consumer group `analytics.dashboard`, dead-letter queue topic `txn.api.dlq` (008-analytics-consumer-layer)
 - Trino-backed historical views (`v_fraud_rate_daily`, `v_rule_triggers`, `v_model_versions`) over Iceberg tables (008-analytics-consumer-layer)
@@ -33,6 +37,7 @@ cd src && pytest && ruff check .
 Python 3.11: Follow standard conventions
 
 ## Recent Changes
+- 009-streamlit-duckdb-migration: Migrated Streamlit query engine from Trino to DuckDB (in-process); PyIceberg→Arrow→DuckDB pattern in analytics/queries/{fraud_rate,rule_triggers,model_versions}.py; MAX_HOURS=720 rolling-window cap; replaces trino-python-client dependency in analytics/queries/
 - 008-analytics-consumer-layer: Added Streamlit analytics app (6 pages + Home), AnalyticsKafkaConsumer daemon (consumer group analytics.dashboard), Prometheus metrics at :8004, DLQ Inspector, Docker service + Makefile targets (analytics-up/down), Trino views over Iceberg
 - 007-feature-serving-contract: Added concurrent.futures (timeout enforcement), Feast 0.62.0 online read API, FeatureServingClient in pipelines/scoring/clients/, FeatureVector dataclass, feature store metrics (fallback_total, miss_total, retrieval_seconds histogram), FeatureStoreStalenessHigh Prometheus alert
 

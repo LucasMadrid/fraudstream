@@ -282,6 +282,10 @@ services:
       - TRINO_PORT=8080
       - PYTHONPATH=/app
       - DLQ_TOPIC=txn.api.dlq
+      - PYICEBERG_CATALOG__ICEBERG__URI=http://iceberg-rest:8181
+      - PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/
+      - PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://minio:9000
+      - PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true
     depends_on:
       broker:
         condition: service_healthy

@@ -57,8 +57,9 @@ analytics = [
     "prometheus-client>=0.20",
     "pybreaker==1.4.1",
     "streamlit>=1.35",
-    "duckdb>=0.10",
+    "duckdb>=1.0",
     "pandas>=2.0",
+    "pyiceberg[pyarrow,s3fs]>=0.11",
 ]
 
 [tool.setuptools.packages.find]
