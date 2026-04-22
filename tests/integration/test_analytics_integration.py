@@ -10,14 +10,14 @@ Tests:
   - Independence: stopping the analytics container does not stall the
     scoring pipeline's consumer group
 """
+
 import io
-import json
 import time
 import uuid
 
 import fastavro
 import pytest
-from confluent_kafka import Consumer, KafkaException, Producer
+from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 
 pytestmark = pytest.mark.integration
@@ -78,9 +78,7 @@ def broker(kafka_container):
 def create_topic(broker):
     """Ensure the alert topic exists before any tests in this module run."""
     admin = AdminClient({"bootstrap.servers": broker})
-    futures = admin.create_topics(
-        [NewTopic(ALERT_TOPIC, num_partitions=1, replication_factor=1)]
-    )
+    futures = admin.create_topics([NewTopic(ALERT_TOPIC, num_partitions=1, replication_factor=1)])
     for t, f in futures.items():
         try:
             f.result()
@@ -101,6 +99,7 @@ def _produce_n(broker: str, n: int = 5) -> list[str]:
 
 
 # ── Test 1: Consumer lag ──────────────────────────────────────────────────────
+
 
 def test_consumer_lag_updates_after_produce(broker):
     """
@@ -126,6 +125,7 @@ def test_consumer_lag_updates_after_produce(broker):
 
 
 # ── Test 2: Consumer group isolation ─────────────────────────────────────────
+
 
 def test_analytics_group_does_not_share_offsets_with_scoring_group(broker):
     """
@@ -164,6 +164,7 @@ def test_analytics_group_does_not_share_offsets_with_scoring_group(broker):
 
 
 # ── Test 3: Independence — scoring pipeline unaffected when analytics stops ───
+
 
 def test_scoring_pipeline_unaffected_when_analytics_consumer_stops(broker):
     """

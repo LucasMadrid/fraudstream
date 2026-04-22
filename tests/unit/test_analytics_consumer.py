@@ -1,24 +1,18 @@
 """Unit tests for analytics/consumers/kafka_consumer.py"""
+
 import io
 import queue
 import re
-import threading
-import time
-from datetime import timezone
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 import fastavro
 import pytest
 
 from analytics.consumers.kafka_consumer import (
-    CONSUMER_GROUP,
-    TOPIC,
     AnalyticsKafkaConsumer,
-    FraudAlertDisplay,
     _deserialize,
-    _SEVERITY_TO_DECISION,
 )
-
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,7 +32,10 @@ _RAW_SCHEMA = {
                 "symbols": ["low", "medium", "high", "critical"],
             },
         },
-        {"name": "evaluation_timestamp", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+        {
+            "name": "evaluation_timestamp",
+            "type": {"type": "long", "logicalType": "timestamp-millis"},
+        },
     ],
 }
 
@@ -72,6 +69,7 @@ def _make_avro_bytes(
 
 # ── deserialization ──────────────────────────────────────────────────────────
 
+
 class TestDeserialize:
     """Tests for the _deserialize Avro → FraudAlertDisplay conversion."""
 
@@ -84,14 +82,17 @@ class TestDeserialize:
         assert alert.rule_triggers == ["VEL-001", "ND-003"]
         assert alert.severity == "critical"
         assert alert.decision == "BLOCK"
-        assert alert.evaluation_timestamp.tzinfo == timezone.utc
+        assert alert.evaluation_timestamp.tzinfo == UTC
 
-    @pytest.mark.parametrize("severity,expected_decision", [
-        ("critical", "BLOCK"),
-        ("high", "BLOCK"),
-        ("medium", "FLAG"),
-        ("low", "ALLOW"),
-    ])
+    @pytest.mark.parametrize(
+        "severity,expected_decision",
+        [
+            ("critical", "BLOCK"),
+            ("high", "BLOCK"),
+            ("medium", "FLAG"),
+            ("low", "ALLOW"),
+        ],
+    )
     @patch("analytics.consumers.kafka_consumer._get_schema", return_value=_PARSED)
     def test_severity_to_decision_mapping(self, _mock, severity, expected_decision):
         raw = _make_avro_bytes(severity=severity)
@@ -117,6 +118,7 @@ class TestDeserialize:
 
 
 # ── buffer eviction ──────────────────────────────────────────────────────────
+
 
 class TestBufferEviction:
     """When the queue is full, the oldest item is evicted to make room for the newest."""
@@ -152,6 +154,7 @@ class TestBufferEviction:
 
 # ── restart counter ──────────────────────────────────────────────────────────
 
+
 class TestRestartCounter:
     """Tests for consumer-thread restart behaviour on Kafka errors."""
 
@@ -174,14 +177,16 @@ class TestRestartCounter:
             consumer._stop_event.set()
             raise RuntimeError("stop")
 
+        target = "analytics.consumers.kafka_consumer.analytics_consumer_restarts_total"
         with patch.object(consumer, "_build_consumer", side_effect=fake_build):
-            with patch("analytics.consumers.kafka_consumer.analytics_consumer_restarts_total") as mock_ctr:
+            with patch(target) as mock_ctr:
                 mock_ctr.inc = MagicMock()
                 consumer._run()
                 assert mock_ctr.inc.call_count >= 1
 
 
 # ── PII render assertion ─────────────────────────────────────────────────────
+
 
 class TestPIIRender:
     """

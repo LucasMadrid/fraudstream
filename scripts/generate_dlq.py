@@ -30,8 +30,8 @@ def _make_payload() -> str:
             "account_id": f"acc-{random.randint(1, 999):04d}",
             "card_number": f"4{random.randint(100_000_000_000_000, 999_999_999_999_999)}",
             "ip_address": (
-                f"{random.randint(1,255)}.{random.randint(0,255)}"
-                f".{random.randint(0,255)}.{random.randint(1,254)}"
+                f"{random.randint(1, 255)}.{random.randint(0, 255)}"
+                f".{random.randint(0, 255)}.{random.randint(1, 254)}"
             ),
         }
     )

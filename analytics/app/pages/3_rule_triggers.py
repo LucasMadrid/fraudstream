@@ -7,7 +7,6 @@ st.title("🔍 Rule Trigger Leaderboard")
 
 try:
     import pandas as pd
-
     from analytics.queries.rule_triggers import rule_leaderboard, rule_trigger_daily
 except ImportError as e:
     st.error(f"Missing dependency: {e}")
