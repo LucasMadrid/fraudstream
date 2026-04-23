@@ -103,17 +103,22 @@ def _produce_n(broker: str, n: int = 5) -> list[str]:
 
 def test_consumer_lag_updates_after_produce(broker):
     """
-    Produce 5 messages then verify the analytics consumer's reported lag
-    reflects the unconsumed messages.
+    Produce 5 messages then verify the analytics consumer drains them.
+
+    The consumer uses auto.offset.reset=latest, so messages must be produced
+    AFTER the consumer has joined the group, not before.
     """
     from analytics.consumers.kafka_consumer import AnalyticsKafkaConsumer
-
-    _produce_n(broker, n=5)
 
     consumer = AnalyticsKafkaConsumer(bootstrap_servers=broker, queue_maxsize=100)
     consumer.start()
 
-    # Give consumer time to join, poll, and compute lag
+    # Wait for the consumer thread to join the Kafka group and begin polling
+    # before producing so that latest-offset assignment includes the new messages.
+    time.sleep(4)
+
+    _produce_n(broker, n=5)
+
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if consumer.queue.qsize() >= 5:
