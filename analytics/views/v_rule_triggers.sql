@@ -17,10 +17,10 @@ exploded AS (
         transaction_id,
         decision,
         fraud_score,
-        CAST(from_unixtime(decision_time_ms / 1000) AS DATE) AS decision_date,
+        CAST(decision_time_ms AS DATE) AS decision_date,
         rule_name
     FROM decisions
-    CROSS JOIN UNNEST(rule_triggers) AS (rule_name)
+    CROSS JOIN UNNEST(rule_triggers) AS t(rule_name)
     WHERE rn = 1
       AND CARDINALITY(rule_triggers) > 0
 )
@@ -28,9 +28,9 @@ SELECT
     decision_date,
     rule_name,
     decision,
-    COUNT(*)                            AS trigger_count,
-    AVG(fraud_score)                    AS avg_fraud_score,
-    APPROX_PERCENTILE(fraud_score, 0.5) AS median_fraud_score,
+    COUNT(*)                             AS trigger_count,
+    AVG(fraud_score)                     AS avg_fraud_score,
+    APPROX_PERCENTILE(fraud_score, 0.5)  AS median_fraud_score,
     APPROX_PERCENTILE(fraud_score, 0.95) AS p95_fraud_score
 FROM exploded
 GROUP BY

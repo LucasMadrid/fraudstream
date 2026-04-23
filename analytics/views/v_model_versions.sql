@@ -13,17 +13,17 @@ WITH decisions AS (
 )
 SELECT
     model_version,
-    CAST(from_unixtime(decision_time_ms / 1000) AS DATE) AS decision_date,
+    CAST(decision_time_ms AS DATE)        AS decision_date,
     decision,
-    COUNT(*)                            AS transaction_count,
-    AVG(fraud_score)                    AS avg_fraud_score,
-    APPROX_PERCENTILE(fraud_score, 0.5)  AS median_fraud_score,
-    APPROX_PERCENTILE(fraud_score, 0.95) AS p95_fraud_score,
-    AVG(latency_ms)                     AS avg_latency_ms,
-    APPROX_PERCENTILE(latency_ms, 0.99) AS p99_latency_ms
+    COUNT(*)                              AS transaction_count,
+    AVG(fraud_score)                      AS avg_fraud_score,
+    APPROX_PERCENTILE(fraud_score, 0.5)   AS median_fraud_score,
+    APPROX_PERCENTILE(fraud_score, 0.95)  AS p95_fraud_score,
+    AVG(latency_ms)                       AS avg_latency_ms,
+    APPROX_PERCENTILE(latency_ms, 0.99)   AS p99_latency_ms
 FROM decisions
 WHERE rn = 1
 GROUP BY
     model_version,
-    CAST(from_unixtime(decision_time_ms / 1000) AS DATE),
+    CAST(decision_time_ms AS DATE),
     decision;

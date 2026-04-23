@@ -192,7 +192,9 @@ services:
       - "8083:8080"
     volumes:
       - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino/jvm.config:/etc/trino/jvm.config:ro
       - trino-data:/data/trino
+    mem_limit: 3g
     depends_on:
       iceberg-rest:
         condition: service_healthy
@@ -261,6 +263,37 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
+  streamlit:
+    build:
+      context: ..
+      dockerfile: infra/analytics/Dockerfile
+    container_name: fraudstream-streamlit
+    ports:
+      - "8501:8501"
+      - "8004:8004"
+    volumes:
+      - ../analytics:/app/analytics:ro
+      - ../pipelines:/app/pipelines:ro
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=broker:29092
+      - SCHEMA_REGISTRY_URL=http://schema-registry:8081
+      - TRINO_HOST=trino
+      - TRINO_PORT=8080
+      - PYTHONPATH=/app
+      - DLQ_TOPIC=txn.api.dlq
+    depends_on:
+      broker:
+        condition: service_healthy
+      trino:
+        condition: service_healthy
+    networks: [fraudstream]
+    profiles: [analytics]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   alertmanager:
     image: prom/alertmanager:v0.32.0

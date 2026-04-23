@@ -14,6 +14,7 @@ Stop fraud before it lands. FraudStream processes payment transactions in millis
   - [Alert Persistence](#alert-persistence)
   - [Analytics Persistence Layer](#analytics-persistence-layer)
   - [Feature Serving Contract](#feature-serving-contract)
+  - [Analytics Consumer Layer](#analytics-consumer-layer)
 - [Services](#services)
 - [Configuration](#configuration)
   - [Fraud Rules](#fraud-rules)
@@ -213,6 +214,45 @@ The client is wired into the Flink scoring job via `_FeatureEnrichmentFunction` 
 
 See [`specs/007-feature-serving-contract/quickstart.md`](specs/007-feature-serving-contract/quickstart.md) for runnable seed + invocation examples covering all four scenarios.
 
+### Analytics Consumer Layer
+
+The Streamlit analytics app (`analytics/app/`) satisfies **Constitution Principle X** — making pipeline activity observable to fraud analysts and operations engineers without touching the scoring hot path.
+
+**Architecture**: A single `AnalyticsKafkaConsumer` daemon thread (consumer group `analytics.dashboard`) drains `txn.fraud.alerts` into a `queue.Queue(maxsize=500)`. All Streamlit pages read from this shared buffer. Historical views query Trino over Iceberg — zero Kafka re-consumption.
+
+**Consumer group isolation**: `analytics.dashboard` is completely independent of `flink-scoring-job`. Stopping or restarting the analytics tier does not affect scoring offsets.
+
+**Pages**:
+
+| Page | Description |
+|------|-------------|
+| **Home** | Consumer health panel: thread status, consumer lag, buffered event count |
+| **1 · Live Feed** | Real-time fraud alerts from `txn.fraud.alerts` — ≤ 2 s p95 latency, 500-event dedup buffer |
+| **2 · Fraud Rate** | Historical daily fraud rate trends via Trino (`v_fraud_rate_daily`) |
+| **3 · Rule Triggers** | Rule trigger leaderboard and per-rule daily drill-down (`v_rule_triggers`) |
+| **4 · Model Compare** | Side-by-side model version score distribution (`v_model_versions`) |
+| **5 · DLQ Inspector** | Dead-letter queue browser with PII masking — ephemeral consumer group, no committed offsets |
+| **6 · Shadow Rules** | Shadow rule monitor (operational tooling carried over from prior feature) |
+
+**Prometheus metrics** exposed at `:8004/metrics`:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `analytics_consumer_lag` | Gauge | Unread messages in `txn.fraud.alerts` for `analytics.dashboard` group |
+| `analytics_events_consumed_total` | Counter | Total events consumed from the topic |
+| `analytics_consumer_restarts_total` | Counter | Consumer thread reconnection count |
+
+Alert rules in `infra/prometheus/alerts/analytics_consumer.yml`:
+- `AnalyticsConsumerLagHigh` — lag > 1000 for 2 min (warning)
+- `AnalyticsConsumerDown` — metric absent for 3 min (critical)
+
+Start the analytics tier:
+
+```bash
+make analytics-up    # starts Trino + Streamlit (port 8501)
+make analytics-down  # stop analytics tier (leaves Core tier running)
+```
+
 ---
 
 ## Services
@@ -230,8 +270,10 @@ See [`specs/007-feature-serving-contract/quickstart.md`](specs/007-feature-servi
 | Management API | `http://localhost:8090` | `X-Api-Key` header (optional) |
 | Iceberg REST catalog | `http://localhost:8181` | — |
 | Trino | `http://localhost:8080` | — |
+| Streamlit analytics app | `http://localhost:8501` | — |
+| Analytics metrics endpoint | `http://localhost:8004/metrics` | — |
 
-All core services start with `make bootstrap` or `make infra-up`. The analytics tier (`iceberg-rest`, `trino`) starts with `docker compose up -d iceberg-rest trino`.
+All core services start with `make bootstrap` or `make infra-up`. The analytics tier (`iceberg-rest`, `trino`) starts with `docker compose up -d iceberg-rest trino`. The Streamlit app starts with `make analytics-up`.
 
 ---
 
@@ -350,6 +392,9 @@ The Flink job exposes Prometheus metrics at `:8002/metrics`. A **Kafka metrics b
   - `DLQDepthHigh` — fires when DLQ topic depth grows above threshold
 - **Prometheus alert rules** in `infra/prometheus/alerts/feature_serving.yml`:
   - `FeatureStoreStalenessHigh` — fires when `feature_materialization_lag_ms > 30000` for 60 s (Feast push source stalled)
+- **Prometheus alert rules** in `infra/prometheus/alerts/analytics_consumer.yml`:
+  - `AnalyticsConsumerLagHigh` — fires when analytics consumer lag > 1000 for 2 min (warning)
+  - `AnalyticsConsumerDown` — fires when analytics lag metric is absent for 3 min (critical; consumer thread dead)
 
 Monitor `iceberg_flush_duration_seconds` p99: if it approaches 4 s, reduce `ICEBERG_FLUSH_INTERVAL_S` or scale the MinIO instance.
 
@@ -380,6 +425,8 @@ Monitor `iceberg_flush_duration_seconds` p99: if it approaches 4 s, reduce `ICEB
 | `make generate-suspicious` | Generate 100% suspicious transactions |
 | `make simulate-alerts` | Continuous wave simulation for dashboard/alert testing |
 | `make consume` | Tail `txn.enriched` without producing |
+| `make analytics-up` | Start Trino + Streamlit analytics app (port 8501) |
+| `make analytics-down` | Stop analytics tier (Core tier unaffected) |
 
 Override traffic defaults:
 
@@ -487,6 +534,22 @@ analytics/
     v_fraud_rate_daily.sql        # Daily fraud rate by rule family
     v_rule_triggers.sql           # Rule trigger counts by rule ID
     v_model_versions.sql          # Decision distribution by model version
+  consumers/                      # Feature 008 — Analytics Consumer Layer
+    kafka_consumer.py             # AnalyticsKafkaConsumer (group: analytics.dashboard)
+    metrics.py                    # Prometheus metrics + start_metrics_server(:8004)
+  queries/                        # Feature 008 — Trino query wrappers
+    fraud_rate.py                 # fraud_rate_daily, fraud_rate_by_channel
+    rule_triggers.py              # rule_leaderboard, rule_trigger_daily
+    model_versions.py             # model_version_summary, model_version_daily
+  app/                            # Feature 008 — Streamlit application
+    Home.py                       # Entry point — consumer health panel
+    pages/
+      1_live_feed.py              # Real-time fraud alert feed (≤ 2 s p95)
+      2_fraud_rate.py             # Historical fraud rate trends
+      3_rule_triggers.py          # Rule trigger leaderboard + drill-down
+      4_model_compare.py          # Side-by-side model version comparison
+      5_dlq_inspector.py          # Dead-letter queue browser (PII masked)
+      6_shadow_rules.py           # Shadow rule monitor (operational tooling)
 
 rules/
   rules.yaml                      # Live rule set — edit thresholds here
@@ -566,6 +629,8 @@ specs/
                                   #   quickstart, tasks (44 tasks, all complete)
   007-feature-serving-contract/   # Spec, plan, tasks, quickstart (feature serving
                                   #   FeatureServingClient + 3ms timeout + Prometheus alerts)
+  008-analytics-consumer-layer/   # Spec, plan, tasks, quickstart (Streamlit app +
+                                  #   analytics.dashboard consumer group + Trino historical views)
 
 .github/
   workflows/
