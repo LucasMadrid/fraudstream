@@ -7,7 +7,6 @@ st.title("📈 Historical Fraud Rate")
 
 try:
     import pandas as pd
-
     from analytics.queries.fraud_rate import fraud_rate_by_channel, fraud_rate_daily
 except ImportError as e:
     st.error(f"Missing dependency: {e}")

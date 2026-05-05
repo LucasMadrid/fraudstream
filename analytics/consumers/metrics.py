@@ -1,3 +1,5 @@
+"""Prometheus metric definitions for the analytics consumer layer."""
+
 import threading
 
 from prometheus_client import Counter, Gauge, start_http_server
@@ -24,6 +26,7 @@ _metrics_lock = threading.Lock()
 
 
 def start_metrics_server(port: int = 8004) -> None:
+    """Start the Prometheus HTTP metrics server once; subsequent calls are no-ops."""
     global _metrics_server_started
     with _metrics_lock:
         if not _metrics_server_started:

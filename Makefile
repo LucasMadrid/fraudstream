@@ -18,6 +18,7 @@ KAFKA_CONNECTOR_URL     := https://repo1.maven.org/maven2/org/apache/flink/flink
         generate generate-suspicious simulate-alerts consume generate-dlq \
         analytics-counts analytics-join analytics-feast analytics-verify \
         analytics-up analytics-down \
+        trino-views \
         install test test-unit test-integration
 
 # ── Infrastructure lifecycle ──────────────────────────────────────────────

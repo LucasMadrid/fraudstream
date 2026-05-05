@@ -1,3 +1,5 @@
+"""Kafka consumer daemon that streams fraud alerts into an in-memory queue."""
+
 from __future__ import annotations
 
 import io
@@ -7,6 +9,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import Path
 
 import fastavro
 from confluent_kafka import Consumer, KafkaException, TopicPartition
@@ -18,6 +22,17 @@ from analytics.consumers.metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SCHEMA_PATH = (
+    Path(__file__).parents[2] / "pipelines" / "scoring" / "schemas" / "fraud-alert-v1.avsc"
+)
+
+
+@lru_cache(maxsize=1)
+def _get_schema() -> object:
+    """Load and cache the parsed Avro schema for FraudAlert messages."""
+    return fastavro.schema.load_schema(str(_SCHEMA_PATH))
+
 
 _SEVERITY_TO_DECISION = {
     "critical": "BLOCK",
@@ -35,6 +50,8 @@ LAG_REFRESH_S = 5.0
 
 @dataclass
 class FraudAlertDisplay:
+    """Normalised view of a fraud alert for the Streamlit dashboard."""
+
     transaction_id: str
     account_id: str
     rule_triggers: list[str]
@@ -51,10 +68,8 @@ class FraudAlertDisplay:
 
 
 def _deserialize(raw_bytes: bytes) -> FraudAlertDisplay:
-    records = list(fastavro.reader(io.BytesIO(raw_bytes)))
-    if not records:
-        raise ValueError("Empty Avro container — no records")
-    rec = records[0]
+    """Deserialize an Avro-encoded fraud alert and return a FraudAlertDisplay."""
+    rec = fastavro.schemaless_reader(io.BytesIO(raw_bytes), _get_schema())
     eval_ts = rec["evaluation_timestamp"]
     if isinstance(eval_ts, int):
         eval_ts = datetime.fromtimestamp(eval_ts / 1000.0, tz=UTC)
@@ -85,9 +100,7 @@ class AnalyticsKafkaConsumer:
         queue_maxsize: int = QUEUE_MAX,
     ) -> None:
         self._bootstrap = bootstrap_servers
-        self.queue: queue.Queue[FraudAlertDisplay] = queue.Queue(
-            maxsize=queue_maxsize
-        )
+        self.queue: queue.Queue[FraudAlertDisplay] = queue.Queue(maxsize=queue_maxsize)
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lag: int = 0
@@ -97,28 +110,31 @@ class AnalyticsKafkaConsumer:
     # ── public API ──────────────────────────────────────────────────────────
 
     def start(self) -> None:
+        """Start the background consumer thread; idempotent if already running."""
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._run, daemon=True, name="analytics-consumer"
-        )
+        self._thread = threading.Thread(target=self._run, daemon=True, name="analytics-consumer")
         self._thread.start()
 
     def stop(self) -> None:
+        """Signal the consumer thread to stop after the next poll cycle."""
         self._stop_event.set()
 
     def is_alive(self) -> bool:
+        """Return True if the consumer thread is currently running."""
         return self._thread is not None and self._thread.is_alive()
 
     @property
     def consumer_lag(self) -> int:
+        """Most-recently-measured unconsumed-message lag across all partitions."""
         with self._lag_lock:
             return self._lag
 
     # ── internal loop ───────────────────────────────────────────────────────
 
     def _build_consumer(self) -> Consumer:
+        """Construct and return a new confluent_kafka Consumer instance."""
         return Consumer(
             {
                 "bootstrap.servers": self._bootstrap,
@@ -130,6 +146,7 @@ class AnalyticsKafkaConsumer:
         )
 
     def _refresh_lag(self, consumer: Consumer) -> None:
+        """Recompute consumer lag at most once per LAG_REFRESH_S interval."""
         now = time.monotonic()
         if now - self._last_lag_refresh < LAG_REFRESH_S:
             return
@@ -138,14 +155,8 @@ class AnalyticsKafkaConsumer:
             meta = consumer.list_topics(TOPIC, timeout=2.0)
             if TOPIC not in meta.topics:
                 return
-            partitions = [
-                TopicPartition(TOPIC, p)
-                for p in meta.topics[TOPIC].partitions
-            ]
-            lo_hi = [
-                consumer.get_watermark_offsets(tp, timeout=2.0)
-                for tp in partitions
-            ]
+            partitions = [TopicPartition(TOPIC, p) for p in meta.topics[TOPIC].partitions]
+            lo_hi = [consumer.get_watermark_offsets(tp, timeout=2.0) for tp in partitions]
             committed = consumer.committed(partitions, timeout=2.0)
             total_lag = 0
             for i, _ in enumerate(partitions):
@@ -156,21 +167,18 @@ class AnalyticsKafkaConsumer:
                 total_lag += max(0, high - committed_off)
             with self._lag_lock:
                 self._lag = total_lag
-            analytics_consumer_lag.labels(
-                consumer_group=CONSUMER_GROUP, topic=TOPIC
-            ).set(total_lag)
+            analytics_consumer_lag.labels(consumer_group=CONSUMER_GROUP, topic=TOPIC).set(total_lag)
         except Exception:
             pass
 
     def _run(self) -> None:
+        """Main loop: consume messages and reconnect on transient Kafka errors."""
         while not self._stop_event.is_set():
             consumer: Consumer | None = None
             try:
                 consumer = self._build_consumer()
                 consumer.subscribe([TOPIC])
-                logger.info(
-                    "AnalyticsKafkaConsumer subscribed to %s", TOPIC
-                )
+                logger.info("AnalyticsKafkaConsumer subscribed to %s", TOPIC)
                 while not self._stop_event.is_set():
                     msg = consumer.poll(POLL_TIMEOUT_S)
                     if msg is None:
@@ -188,9 +196,7 @@ class AnalyticsKafkaConsumer:
                             except queue.Empty:
                                 pass
                             self.queue.put_nowait(alert)
-                        analytics_events_consumed_total.labels(
-                            topic=TOPIC
-                        ).inc()
+                        analytics_events_consumed_total.labels(topic=TOPIC).inc()
                     except Exception as de:
                         logger.warning("Deserialization error: %s", de)
                     self._refresh_lag(consumer)

@@ -22,6 +22,7 @@ ERRORS = [
 
 
 def _make_payload() -> str:
+    """Return a JSON string with randomised transaction fields for a DLQ message."""
     return json.dumps(
         {
             "transaction_id": str(uuid.uuid4()),
@@ -29,14 +30,15 @@ def _make_payload() -> str:
             "account_id": f"acc-{random.randint(1, 999):04d}",
             "card_number": f"4{random.randint(100_000_000_000_000, 999_999_999_999_999)}",
             "ip_address": (
-                f"{random.randint(1,255)}.{random.randint(0,255)}"
-                f".{random.randint(0,255)}.{random.randint(1,254)}"
+                f"{random.randint(1, 255)}.{random.randint(0, 255)}"
+                f".{random.randint(0, 255)}.{random.randint(1, 254)}"
             ),
         }
     )
 
 
 def main() -> None:
+    """Parse CLI args and produce synthetic DLQ messages to the configured topic."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=10)
     parser.add_argument("--brokers", default="localhost:9092")

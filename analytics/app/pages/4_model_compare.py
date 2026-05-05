@@ -7,7 +7,6 @@ st.title("🤖 Model Version Comparison")
 
 try:
     import pandas as pd
-
     from analytics.queries.model_versions import model_version_daily, model_version_summary
 except ImportError as e:
     st.error(f"Missing dependency: {e}")

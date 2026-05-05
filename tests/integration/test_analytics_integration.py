@@ -10,14 +10,14 @@ Tests:
   - Independence: stopping the analytics container does not stall the
     scoring pipeline's consumer group
 """
+
 import io
-import json
 import time
 import uuid
 
 import fastavro
 import pytest
-from confluent_kafka import Consumer, KafkaException, Producer
+from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 
 pytestmark = pytest.mark.integration
@@ -52,6 +52,7 @@ _PARSED_SCHEMA = fastavro.parse_schema(_RAW_SCHEMA)
 
 
 def _make_alert_bytes(txn_id: str = None, severity: str = "high") -> bytes:
+    """Return a schemaless Avro-encoded FraudAlert for use in integration tests."""
     buf = io.BytesIO()
     fastavro.schemaless_writer(
         buf,
@@ -69,15 +70,15 @@ def _make_alert_bytes(txn_id: str = None, severity: str = "high") -> bytes:
 
 @pytest.fixture(scope="module")
 def broker(kafka_container):
+    """Return the bootstrap server address from the running Kafka container."""
     return kafka_container.get_bootstrap_server()
 
 
 @pytest.fixture(scope="module", autouse=True)
 def create_topic(broker):
+    """Ensure the alert topic exists before any tests in this module run."""
     admin = AdminClient({"bootstrap.servers": broker})
-    futures = admin.create_topics(
-        [NewTopic(ALERT_TOPIC, num_partitions=1, replication_factor=1)]
-    )
+    futures = admin.create_topics([NewTopic(ALERT_TOPIC, num_partitions=1, replication_factor=1)])
     for t, f in futures.items():
         try:
             f.result()
@@ -86,6 +87,7 @@ def create_topic(broker):
 
 
 def _produce_n(broker: str, n: int = 5) -> list[str]:
+    """Produce n Avro-encoded alert messages and return their transaction IDs."""
     p = Producer({"bootstrap.servers": broker})
     ids = []
     for _ in range(n):
@@ -98,19 +100,25 @@ def _produce_n(broker: str, n: int = 5) -> list[str]:
 
 # ── Test 1: Consumer lag ──────────────────────────────────────────────────────
 
+
 def test_consumer_lag_updates_after_produce(broker):
     """
-    Produce 5 messages then verify the analytics consumer's reported lag
-    reflects the unconsumed messages.
+    Produce 5 messages then verify the analytics consumer drains them.
+
+    The consumer uses auto.offset.reset=latest, so messages must be produced
+    AFTER the consumer has joined the group, not before.
     """
     from analytics.consumers.kafka_consumer import AnalyticsKafkaConsumer
-
-    _produce_n(broker, n=5)
 
     consumer = AnalyticsKafkaConsumer(bootstrap_servers=broker, queue_maxsize=100)
     consumer.start()
 
-    # Give consumer time to join, poll, and compute lag
+    # Wait for the consumer thread to join the Kafka group and begin polling
+    # before producing so that latest-offset assignment includes the new messages.
+    time.sleep(4)
+
+    _produce_n(broker, n=5)
+
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if consumer.queue.qsize() >= 5:
@@ -122,6 +130,7 @@ def test_consumer_lag_updates_after_produce(broker):
 
 
 # ── Test 2: Consumer group isolation ─────────────────────────────────────────
+
 
 def test_analytics_group_does_not_share_offsets_with_scoring_group(broker):
     """
@@ -160,6 +169,7 @@ def test_analytics_group_does_not_share_offsets_with_scoring_group(broker):
 
 
 # ── Test 3: Independence — scoring pipeline unaffected when analytics stops ───
+
 
 def test_scoring_pipeline_unaffected_when_analytics_consumer_stops(broker):
     """
