@@ -94,7 +94,7 @@ target-version = "py311"
 select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["pipelines"]
+known-first-party = ["analytics", "pipelines"]
 
 [tool.uv.extra-build-dependencies]
 apache-beam = ["setuptools", "wheel"]
