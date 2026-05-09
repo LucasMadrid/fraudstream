@@ -51,7 +51,6 @@ scoring = [
     "slowapi>=0.1.9",
 ]
 analytics = [
-    "trino>=0.328",
     "confluent-kafka[schema-registry]>=2.3",
     "fastavro>=1.9",
     "prometheus-client>=0.20",

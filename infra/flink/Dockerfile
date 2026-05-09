@@ -30,7 +30,7 @@ COPY pipelines/ ./pipelines/
 
 # Install processing deps (non-editable — wheels land in venv site-packages)
 # Excludes dev extras (pytest, ruff, hypothesis)
-RUN pip install --no-cache-dir ".[processing]"
+RUN pip install --no-cache-dir --prefer-binary ".[processing]"
 
 # ============================================================================
 # RUNTIME STAGE — minimal final image, no build tools

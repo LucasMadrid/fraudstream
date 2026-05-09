@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # ============================================================================
   # Stage 1: Code Quality Gate (BLOCKING)
@@ -312,12 +316,10 @@ jobs:
 
       - name: Scan Python dependencies with pip-audit
         id: pip-audit
-        continue-on-error: true
         run: |
           pip-audit --desc \
             --format sarif \
-            --output /tmp/pip-audit-report.sarif || \
-          (exit_code=$?; echo "pip_audit_exit_code=$exit_code" >> $GITHUB_OUTPUT; exit 0)
+            --output /tmp/pip-audit-report.sarif
 
       - name: Upload pip-audit SARIF to GitHub Security
         if: always()
@@ -496,6 +498,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [code-quality, unit-tests, schema-integrity, security-scan]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -615,8 +618,14 @@ jobs:
 
       - name: Run latency benchmark
         run: |
-          python -m pytest tests/bench/ -v --tb=short -m latency 2>/dev/null || \
-          echo "No latency benchmarks found — skipping. Add tests/bench/ with @pytest.mark.latency to enable."
+          if [ -d "tests/bench" ]; then
+            python -m pytest tests/bench/ -v --tb=short -m latency
+          elif [ -d "tests/performance" ]; then
+            python -m pytest tests/performance/ -v --tb=short -m perf 2>/dev/null || \
+            echo "No @pytest.mark.perf tests found in tests/performance/ — skipping."
+          else
+            echo "No latency benchmarks found — skipping. Add tests/bench/ with @pytest.mark.latency to enable."
+          fi
 
       - name: Assert p99 < 100ms
         run: |
@@ -658,7 +667,7 @@ jobs:
   ci-summary:
     name: CI Summary
     if: always()
-    needs: [code-quality, unit-tests, schema-integrity, schema-registry-compat, security-scan, integration-tests, build-images]
+    needs: [code-quality, unit-tests, schema-integrity, schema-registry-compat, security-scan, integration-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Check CI status

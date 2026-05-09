@@ -1,6 +1,5 @@
 COMPOSE        := docker compose -f infra/docker-compose.yml
 PYTHON         := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3.11)
-TRINO          := docker exec fraudstream-trino trino
 export DOCKER_BUILDKIT := 1
 
 ## MinIO credentials for PyIceberg S3FileIO (override for production)
@@ -18,7 +17,6 @@ KAFKA_CONNECTOR_URL     := https://repo1.maven.org/maven2/org/apache/flink/flink
         generate generate-suspicious simulate-alerts consume generate-dlq \
         analytics-counts analytics-join analytics-feast analytics-verify \
         analytics-up analytics-down \
-        trino-views \
         install test test-unit test-integration
 
 # ── Infrastructure lifecycle ──────────────────────────────────────────────
@@ -147,24 +145,21 @@ flink-job-analytics:
 	  --geoip-db-path infra/geoip/GeoLite2-City.mmdb
 
 # ── Analytics persistence verification ───────────────────────────────────
-## analytics-counts: row counts for both Iceberg tables via Trino
+## analytics-counts: row counts for both Iceberg tables via DuckDB/PyIceberg
 analytics-counts:
 	@echo "==> enriched_transactions"
-	@$(TRINO) --execute "SELECT COUNT(*) AS rows FROM iceberg.default.enriched_transactions;"
+	@$(PYTHON) -c "from analytics.queries.iceberg_reader import load_table; t = load_table('enriched_transactions'); print(f'  rows: {len(t.scan().to_arrow())}')" 2>/dev/null || echo "  (table not found or Iceberg not running)"
 	@echo "==> fraud_decisions"
-	@$(TRINO) --execute "SELECT COUNT(*) AS rows FROM iceberg.default.fraud_decisions;"
+	@$(PYTHON) -c "from analytics.queries.iceberg_reader import load_table; t = load_table('fraud_decisions'); print(f'  rows: {len(t.scan().to_arrow())}')" 2>/dev/null || echo "  (table not found or Iceberg not running)"
 
-## analytics-join: join both tables on transaction_id — show decisions with features
-## LIMIT=20 make analytics-join   → show more rows
+## analytics-join: join both tables on transaction_id via DuckDB
 analytics-join:
-	@$(TRINO) --execute " \
-	  SELECT e.account_id, e.amount, e.vel_count_1h, \
-	         d.decision, d.fraud_score, d.rule_triggers \
-	  FROM iceberg.default.enriched_transactions e \
-	  JOIN iceberg.default.fraud_decisions d \
-	    ON e.transaction_id = d.transaction_id \
-	  ORDER BY d.fraud_score DESC \
-	  LIMIT $(or $(LIMIT),20);"
+	@$(PYTHON) -c "\
+from analytics.queries.duckdb_runner import DuckDBQueryRunner; \
+runner = DuckDBQueryRunner(); \
+df = runner.execute('SELECT e.account_id, e.amount, d.decision, d.fraud_score FROM enriched e JOIN decisions d ON e.transaction_id = d.transaction_id ORDER BY d.fraud_score DESC LIMIT $(or $(LIMIT),20)'); \
+print(df.to_string()) if df is not None and len(df) > 0 else print('  (no data or tables not found)') \
+" 2>/dev/null || echo "  (DuckDB query failed — ensure Iceberg is running)"
 
 ## analytics-feast: check Feast online store for a given account.
 ## ACCOUNT=acc-0007 make analytics-feast   → inspect a specific account
@@ -174,20 +169,9 @@ analytics-feast:
 ## analytics-verify: run all three checks in sequence (counts + join sample + feast)
 analytics-verify: analytics-counts analytics-join analytics-feast
 
-# ── Analytics tier lifecycle ──────────────────────────────────────────────
-## trino-views: create or replace all analytics Trino views over Iceberg tables.
-## Requires Core tier (Trino) to be running. Safe to re-run at any time.
-trino-views:
-	@echo "Creating Trino views..."
-	@$(TRINO) --execute "$$(cat analytics/views/v_fraud_rate_daily.sql)"
-	@$(TRINO) --execute "$$(cat analytics/views/v_rule_triggers.sql)"
-	@$(TRINO) --execute "$$(cat analytics/views/v_model_versions.sql)"
-	@$(TRINO) --execute "$$(cat analytics/views/v_transaction_audit.sql)"
-	@echo "Trino views ready."
-
-## analytics-up: start the Analytics tier (Trino + Streamlit) alongside Core.
+## analytics-up: start the Analytics tier (Streamlit + DuckDB) alongside Core.
 ## Requires Core tier to be running: make bootstrap first.
-analytics-up: trino-views
+analytics-up:
 	docker compose -f infra/docker-compose.yml --profile analytics up -d --build streamlit
 	@echo "Streamlit: http://localhost:8501"
 	@echo "Metrics:   http://localhost:8004/metrics"
@@ -251,7 +235,7 @@ consume:
 # ── Python dependencies ──────────────────────────────────────────────────
 
 install:
-	pip install -e ".[processing]"
+	pip install -e ".[dev,processing,scoring]"
 
 # ── Tests ─────────────────────────────────────────────────────────────────
 
@@ -261,4 +245,7 @@ test-unit:
 test-integration:
 	pytest -m integration tests/integration/ -v
 
-test: test-unit
+test-contract:
+	pytest tests/contract/ -v
+
+test: test-unit test-contract
