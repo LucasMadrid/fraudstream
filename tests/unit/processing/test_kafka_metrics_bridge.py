@@ -75,33 +75,46 @@ class TestBuildRuleFamilyMap:
 # ---------------------------------------------------------------------------
 class TestStartStop:
     def test_start_spawns_two_daemon_threads(self, tmp_path):
+        from unittest.mock import patch as mock_patch
+
         from pipelines.processing import kafka_metrics_bridge
 
         yaml_file = tmp_path / "rules.yaml"
         yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
 
+        # Mock Consumer so threads don't die from no Kafka in CI
+        mock_consumer = MagicMock()
+        mock_consumer.poll.side_effect = lambda timeout: (
+            kafka_metrics_bridge._stop_event.wait(timeout) or None
+        )
+
         # Use idents (unique per thread), not names — prior tests may have left
         # threads named "metrics-bridge-*" alive from TestJobMain.main() calls.
         before_idents = {t.ident for t in threading.enumerate()}
 
-        kafka_metrics_bridge.start(
-            brokers="localhost:9092",
-            alerts_topic="txn.fraud.alerts",
-            enriched_topic="txn.enriched",
-            rules_yaml_path=str(yaml_file),
-        )
+        with mock_patch("confluent_kafka.Consumer", return_value=mock_consumer):
+            kafka_metrics_bridge.start(
+                brokers="localhost:9092",
+                alerts_topic="txn.fraud.alerts",
+                enriched_topic="txn.enriched",
+                rules_yaml_path=str(yaml_file),
+            )
 
-        new_threads = [t for t in threading.enumerate() if t.ident not in before_idents]
-        new_names = {t.name for t in new_threads}
-        assert "metrics-bridge-alerts" in new_names
-        assert "metrics-bridge-enriched" in new_names
+            import time
 
-        # Verify daemon flag on the newly spawned threads only
-        for t in new_threads:
-            if t.name in ("metrics-bridge-alerts", "metrics-bridge-enriched"):
-                assert t.daemon is True
+            time.sleep(0.1)  # Give threads time to start
 
-        kafka_metrics_bridge.stop()
+            new_threads = [t for t in threading.enumerate() if t.ident not in before_idents]
+            new_names = {t.name for t in new_threads}
+            assert "metrics-bridge-alerts" in new_names
+            assert "metrics-bridge-enriched" in new_names
+
+            # Verify daemon flag on the newly spawned threads only
+            for t in new_threads:
+                if t.name in ("metrics-bridge-alerts", "metrics-bridge-enriched"):
+                    assert t.daemon is True
+
+            kafka_metrics_bridge.stop()
 
     def test_stop_sets_stop_event(self):
         from pipelines.processing import kafka_metrics_bridge
