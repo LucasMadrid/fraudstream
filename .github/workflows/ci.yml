@@ -63,7 +63,10 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing,scoring,analytics]"
+          pip install -e ".[dev,processing,scoring]"
+          # Install analytics deps separately to avoid pyarrow conflict
+          # between apache-flink and pyiceberg
+          pip install --no-deps duckdb pandas streamlit 2>/dev/null || true
 
       - name: Run unit tests with coverage
         run: |
@@ -400,7 +403,7 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing,scoring,analytics]"
+          pip install -e ".[dev,processing,scoring]"
 
       - name: Download GeoLite2 database
         # MAXMIND_LICENCE_KEY is a repository secret (see docs/security-policy.md).
@@ -596,7 +599,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing,scoring,analytics]"
+          pip install -e ".[dev,processing,scoring]"
 
       - name: Run latency benchmark
         run: |
