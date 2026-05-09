@@ -48,9 +48,7 @@ def record_evaluation(rule_id: str, rule_family: str) -> None:
 
 def record_flag(rule_id: str, rule_family: str, severity: str) -> None:
     """Increment the rule flags counter for a triggered rule."""
-    rule_flags_total.labels(
-        rule_id=rule_id, rule_family=rule_family, severity=severity
-    ).inc()
+    rule_flags_total.labels(rule_id=rule_id, rule_family=rule_family, severity=severity).inc()
 
 
 rule_shadow_triggers_total = SafeCounter(
@@ -61,8 +59,7 @@ rule_shadow_triggers_total = SafeCounter(
 
 rule_shadow_fp_total = SafeCounter(
     "rule_shadow_fp_total",
-    "Shadow rule triggers where final determination was clean "
-    "(estimated false positives)",
+    "Shadow rule triggers where final determination was clean (estimated false positives)",
     ["rule_id"],
 )
 

@@ -664,9 +664,7 @@ except ImportError:
                         batch_size,
                     )
                     for record in deduplicated:
-                        txn_id = record.get(
-                            "transaction_id", "unknown"
-                        )
+                        txn_id = record.get("transaction_id", "unknown")
                         _emit_dlq_event(
                             _DLQEvent(
                                 transaction_id=txn_id,
@@ -680,10 +678,7 @@ except ImportError:
                         self._breaker.call(self._table.append, pa_table)
                     else:
                         self._table.append(pa_table)
-                    logger.info(
-                        f"Flushed {batch_size} records to "
-                        "iceberg.enriched_transactions"
-                    )
+                    logger.info(f"Flushed {batch_size} records to iceberg.enriched_transactions")
 
                     # Push to Feast after successful Iceberg write
                     try:

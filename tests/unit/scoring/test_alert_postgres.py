@@ -178,9 +178,7 @@ class TestAlertPostgresSinkReconnection:
             None,  # SELECT 1 in _ensure_connection
             Exception("some DB error"),  # INSERT fails
         ]
-        mock_conn.cursor.return_value.__enter__ = MagicMock(
-            return_value=mock_cur
-        )
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         sink._conn = mock_conn
 
@@ -246,21 +244,15 @@ class TestAlertPostgresSinkReconnection:
         mock_conn.cursor.return_value = ping_cur
         # _execute_insert uses "with conn.cursor() as cur" — context manager
         insert_cur = MagicMock()
-        insert_cur.execute.side_effect = psycopg2.OperationalError(
-            "connection reset"
-        )
-        mock_conn.cursor.return_value.__enter__ = MagicMock(
-            return_value=insert_cur
-        )
+        insert_cur.execute.side_effect = psycopg2.OperationalError("connection reset")
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=insert_cur)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         sink._conn = mock_conn
 
         # After reconnect, new connection succeeds
         new_conn = MagicMock()
         new_cur = MagicMock()
-        new_conn.cursor.return_value.__enter__ = MagicMock(
-            return_value=new_cur
-        )
+        new_conn.cursor.return_value.__enter__ = MagicMock(return_value=new_cur)
         new_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
         alert = _make_alert()

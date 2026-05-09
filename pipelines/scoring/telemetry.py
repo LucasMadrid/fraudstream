@@ -62,9 +62,7 @@ def init_tracer(allow_sample_rate: float = 0.01):
     """
     global _tracer
     if not _HAS_OTEL:
-        logger.info(
-            "opentelemetry not installed – skipping tracer initialisation"
-        )
+        logger.info("opentelemetry not installed – skipping tracer initialisation")
         return None
 
     resource = Resource.create({"service.name": "fraudstream-scoring"})

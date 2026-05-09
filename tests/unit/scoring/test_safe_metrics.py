@@ -13,9 +13,7 @@ class TestSafeCounterWithPrometheus:
     def test_safe_counter_works_with_prometheus(self):
         from pipelines.scoring.safe_metrics import SafeCounter
 
-        c = SafeCounter(
-            "test_safe_counter_inc", "test counter", ["env"]
-        )
+        c = SafeCounter("test_safe_counter_inc", "test counter", ["env"])
         child = c.labels(env="test")
         child.inc()
         assert child._value.get() >= 1
@@ -72,9 +70,7 @@ class TestFraudRuleEvaluationSpan:
         from pipelines.scoring.metrics import fraud_rule_evaluation_span
 
         # Patch the import inside the function body to simulate ImportError.
-        with mock.patch.dict(
-            sys.modules, {"opentelemetry": None, "opentelemetry.trace": None}
-        ):
+        with mock.patch.dict(sys.modules, {"opentelemetry": None, "opentelemetry.trace": None}):
             # Must not raise
             with fraud_rule_evaluation_span("txn-absent") as span:
                 assert span is None

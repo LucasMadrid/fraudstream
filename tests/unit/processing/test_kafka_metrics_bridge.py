@@ -371,9 +371,7 @@ class TestThreadSafety:
         from pipelines.processing import kafka_metrics_bridge
 
         yaml_file = tmp_path / "rules.yaml"
-        yaml_file.write_text(
-            "- rule_id: VEL-001\n  family: velocity\n  enabled: true\n"
-        )
+        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
 
         kafka_metrics_bridge.stop()  # clean slate
 
@@ -408,9 +406,7 @@ class TestThreadSafety:
         from pipelines.processing import kafka_metrics_bridge
 
         yaml_file = tmp_path / "rules.yaml"
-        yaml_file.write_text(
-            "- rule_id: VEL-001\n  family: velocity\n  enabled: true\n"
-        )
+        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
 
         kafka_metrics_bridge.start(
             brokers="localhost:9092",
@@ -425,9 +421,7 @@ class TestThreadSafety:
         from pipelines.processing import kafka_metrics_bridge
 
         yaml_file = tmp_path / "rules.yaml"
-        yaml_file.write_text(
-            "- rule_id: VEL-001\n  family: velocity\n  enabled: true\n"
-        )
+        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
 
         kafka_metrics_bridge.start(
             brokers="localhost:9092",

@@ -110,9 +110,7 @@ def serialise_dlq_record(record: dict, schema_id: int = 0) -> bytes:
 class DLQKafkaProducer:
     """Kafka producer that routes unprocessable events to a DLQ topic."""
 
-    def __init__(
-        self, bootstrap_servers: str, dlq_topic: str
-    ) -> None:
+    def __init__(self, bootstrap_servers: str, dlq_topic: str) -> None:
         self._bootstrap_servers = bootstrap_servers
         self._dlq_topic = dlq_topic
         self._producer = None
@@ -121,21 +119,13 @@ class DLQKafkaProducer:
         """Create the underlying confluent_kafka.Producer."""
         from confluent_kafka import Producer  # type: ignore[import-untyped]
 
-        self._producer = Producer(
-            {"bootstrap.servers": self._bootstrap_servers}
-        )
-        _dlq_logger.info(
-            "DLQKafkaProducer opened for topic=%s", self._dlq_topic
-        )
+        self._producer = Producer({"bootstrap.servers": self._bootstrap_servers})
+        _dlq_logger.info("DLQKafkaProducer opened for topic=%s", self._dlq_topic)
 
-    def produce(
-        self, record_bytes: bytes, key: str | None = None
-    ) -> None:
+    def produce(self, record_bytes: bytes, key: str | None = None) -> None:
         """Produce a serialised DLQ record to the DLQ topic."""
         if self._producer is None:
-            _dlq_logger.error(
-                "DLQKafkaProducer.produce() called before open()"
-            )
+            _dlq_logger.error("DLQKafkaProducer.produce() called before open()")
             return
         try:
             self._producer.produce(

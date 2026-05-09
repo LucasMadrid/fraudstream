@@ -122,7 +122,8 @@ class AlertKafkaSink:
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(
-                    "Failed to route txn=%s to DLQ", alert.transaction_id,
+                    "Failed to route txn=%s to DLQ",
+                    alert.transaction_id,
                 )
 
     @staticmethod
@@ -134,9 +135,7 @@ class AlertKafkaSink:
     def emit(self, alert: FraudAlert) -> None:
         """Produce a FraudAlert to the fraud alerts topic."""
         if self._producer is None:
-            raise RuntimeError(
-                "AlertKafkaSink.open() must be called before emit()"
-            )
+            raise RuntimeError("AlertKafkaSink.open() must be called before emit()")
         payload = self._serialise(alert)
         self._producer.produce(
             topic=self._config.fraud_alerts_topic,

@@ -383,9 +383,7 @@ class TestIcebergEnrichedSinkFlushBehavior:
         sink._catalog_loaded = False
         sink._breaker = None
 
-        records = [
-            {"transaction_id": f"txn-{i:03d}"} for i in range(3)
-        ]
+        records = [{"transaction_id": f"txn-{i:03d}"} for i in range(3)]
         sink._buffer = list(records)
 
         sink._flush()
@@ -394,11 +392,7 @@ class TestIcebergEnrichedSinkFlushBehavior:
         assert sink._buffer == []
 
         # Each record should produce a DLQ log entry with the right reason
-        dlq_messages = [
-            r.message
-            for r in caplog.records
-            if r.name == "dlq"
-        ]
+        dlq_messages = [r.message for r in caplog.records if r.name == "dlq"]
         assert len(dlq_messages) == 3
         for msg in dlq_messages:
             parsed = json.loads(msg)

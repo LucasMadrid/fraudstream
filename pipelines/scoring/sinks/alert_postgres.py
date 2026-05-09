@@ -82,9 +82,7 @@ class AlertPostgresSink:
         try:
             self._execute_insert(alert)
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            logger.warning(
-                "Connection error during persist, retrying once..."
-            )
+            logger.warning("Connection error during persist, retrying once...")
             self._connect()
             self._execute_insert(alert)
 
@@ -102,9 +100,7 @@ class AlertPostgresSink:
                 ),
             )
         self._conn.commit()
-        logger.debug(
-            "Persisted fraud alert for txn=%s", alert.transaction_id
-        )
+        logger.debug("Persisted fraud alert for txn=%s", alert.transaction_id)
 
     def close(self) -> None:
         """Close DB connection safely — tolerates already-closed state."""

@@ -34,9 +34,7 @@ from pipelines.scoring.safe_metrics import SafeCounter
 
 logger = logging.getLogger(__name__)
 
-_ALERT_SCHEMA_PATH = (
-    Path(__file__).parent.parent / "scoring" / "schemas" / "fraud-alert-v1.avsc"
-)
+_ALERT_SCHEMA_PATH = Path(__file__).parent.parent / "scoring" / "schemas" / "fraud-alert-v1.avsc"
 
 _stop_event = threading.Event()
 _threads: list[threading.Thread] = []
@@ -78,14 +76,10 @@ def _alerts_consumer_thread(
 
             from pipelines.scoring.metrics import rule_flags_total
         except ImportError as exc:
-            logger.warning(
-                "Metrics bridge (alerts): missing dependency, skipping: %s", exc
-            )
+            logger.warning("Metrics bridge (alerts): missing dependency, skipping: %s", exc)
             return
 
-        parsed_schema = fastavro.parse_schema(
-            json.loads(_ALERT_SCHEMA_PATH.read_text())
-        )
+        parsed_schema = fastavro.parse_schema(json.loads(_ALERT_SCHEMA_PATH.read_text()))
 
         consumer = Consumer(
             {
@@ -104,14 +98,10 @@ def _alerts_consumer_thread(
                 if msg is None:
                     continue
                 if msg.error():
-                    logger.debug(
-                        "Metrics bridge (alerts) kafka error: %s", msg.error()
-                    )
+                    logger.debug("Metrics bridge (alerts) kafka error: %s", msg.error())
                     continue
                 try:
-                    record = next(
-                        fastavro.reader(io.BytesIO(msg.value()), parsed_schema)
-                    )
+                    record = next(fastavro.reader(io.BytesIO(msg.value()), parsed_schema))
                     severity = record.get("severity", "low")
                     if not isinstance(severity, str):
                         severity = str(severity)
@@ -136,12 +126,8 @@ def _alerts_consumer_thread(
             consumer.close()
             logger.info("Metrics bridge (alerts): consumer closed")
     except Exception:  # noqa: BLE001
-        logger.error(
-            "Metrics bridge (alerts): thread died unexpectedly", exc_info=True
-        )
-        bridge_thread_died_total.labels(
-            thread_name="metrics-bridge-alerts"
-        ).inc()
+        logger.error("Metrics bridge (alerts): thread died unexpectedly", exc_info=True)
+        bridge_thread_died_total.labels(thread_name="metrics-bridge-alerts").inc()
 
 
 def _enriched_consumer_thread(
@@ -156,9 +142,7 @@ def _enriched_consumer_thread(
     """
     try:
         if not rule_family_map:
-            logger.warning(
-                "Metrics bridge (enriched): no rules loaded — skipping thread"
-            )
+            logger.warning("Metrics bridge (enriched): no rules loaded — skipping thread")
             return
 
         try:
@@ -193,9 +177,7 @@ def _enriched_consumer_thread(
                 if msg.error():
                     continue
                 for rule_id, family in rule_items:
-                    rule_evaluations_total.labels(
-                        rule_id=rule_id, rule_family=family
-                    ).inc()
+                    rule_evaluations_total.labels(rule_id=rule_id, rule_family=family).inc()
         finally:
             consumer.close()
             logger.info("Metrics bridge (enriched): consumer closed")
@@ -204,9 +186,7 @@ def _enriched_consumer_thread(
             "Metrics bridge (enriched): thread died unexpectedly",
             exc_info=True,
         )
-        bridge_thread_died_total.labels(
-            thread_name="metrics-bridge-enriched"
-        ).inc()
+        bridge_thread_died_total.labels(thread_name="metrics-bridge-enriched").inc()
 
 
 def start(

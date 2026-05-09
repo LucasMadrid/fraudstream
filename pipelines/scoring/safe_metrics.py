@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover – tested via mock
 # No-op label child (returned by SafeCounter.labels / SafeGauge.labels)
 # ---------------------------------------------------------------------------
 
+
 class _NoOpChild:
     """Placeholder returned by no-op .labels() calls."""
 
@@ -41,6 +42,7 @@ _NOOP_CHILD = _NoOpChild()
 # SafeCounter
 # ---------------------------------------------------------------------------
 
+
 class SafeCounter:
     """Drop-in replacement for ``prometheus_client.Counter``.
 
@@ -54,11 +56,7 @@ class SafeCounter:
         documentation: str,
         labelnames: list[str] | tuple[str, ...] = (),
     ) -> None:
-        self._inner = (
-            _prom.Counter(name, documentation, labelnames)
-            if _HAS_PROMETHEUS
-            else None
-        )
+        self._inner = _prom.Counter(name, documentation, labelnames) if _HAS_PROMETHEUS else None
 
     # -- public API used in the scoring pipeline --
 
@@ -83,6 +81,7 @@ class SafeCounter:
 # SafeGauge
 # ---------------------------------------------------------------------------
 
+
 class SafeGauge:
     """Drop-in replacement for ``prometheus_client.Gauge``."""
 
@@ -92,11 +91,7 @@ class SafeGauge:
         documentation: str,
         labelnames: list[str] | tuple[str, ...] = (),
     ) -> None:
-        self._inner = (
-            _prom.Gauge(name, documentation, labelnames)
-            if _HAS_PROMETHEUS
-            else None
-        )
+        self._inner = _prom.Gauge(name, documentation, labelnames) if _HAS_PROMETHEUS else None
 
     def labels(self, *args, **kwargs):  # noqa: ANN002,ANN003,ANN201
         if self._inner is not None:
@@ -118,6 +113,7 @@ class SafeGauge:
 # SafeHistogram
 # ---------------------------------------------------------------------------
 
+
 class SafeHistogram:
     """Drop-in replacement for ``prometheus_client.Histogram``."""
 
@@ -132,9 +128,7 @@ class SafeHistogram:
         if buckets:
             kwargs["buckets"] = buckets
         self._inner = (
-            _prom.Histogram(name, documentation, labelnames, **kwargs)
-            if _HAS_PROMETHEUS
-            else None
+            _prom.Histogram(name, documentation, labelnames, **kwargs) if _HAS_PROMETHEUS else None
         )
 
     def labels(self, *args, **kwargs):  # noqa: ANN002,ANN003,ANN201

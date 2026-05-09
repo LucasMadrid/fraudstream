@@ -17,6 +17,7 @@ from pipelines.scoring.types import FraudDecision
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_txn(**overrides) -> dict:
     """Return a minimal transaction dict."""
     base = {
@@ -52,9 +53,7 @@ class TestEvaluateBadRecord:
         txn = _make_txn()
 
         # Replicate the guarded _evaluate logic
-        with patch(
-            "pipelines.scoring.metrics.evaluation_errors_total"
-        ) as mock_counter:
+        with patch("pipelines.scoring.metrics.evaluation_errors_total") as mock_counter:
             try:
                 result = evaluator.dispatch(txn)
                 decision = _build_fraud_decision(txn, result)
@@ -140,9 +139,7 @@ class TestFeatureEnrichmentFallback:
         wrapper = self._build_flink_enrichment_fn()
         wrapper._fn.map.side_effect = RuntimeError("timeout")
 
-        with patch(
-            "pipelines.scoring.metrics.feature_store_fallback_total"
-        ) as mock_counter:
+        with patch("pipelines.scoring.metrics.feature_store_fallback_total") as mock_counter:
             mock_labels = MagicMock()
             mock_counter.labels.return_value = mock_labels
 

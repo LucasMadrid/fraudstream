@@ -20,9 +20,7 @@ class TestDLQKafkaProducerInit:
 class TestDLQKafkaProducerOpen:
     """Test DLQKafkaProducer.open()."""
 
-    @patch(
-        "pipelines.processing.shared.dlq_sink.DLQKafkaProducer.open"
-    )
+    @patch("pipelines.processing.shared.dlq_sink.DLQKafkaProducer.open")
     def test_open_creates_producer(self, mock_open):
         p = DLQKafkaProducer("localhost:9092", "dlq")
         p.open()
@@ -31,9 +29,7 @@ class TestDLQKafkaProducerOpen:
     def test_open_sets_producer_via_mock(self):
         p = DLQKafkaProducer("localhost:9092", "dlq")
         mock_producer = MagicMock()
-        with patch(
-            "confluent_kafka.Producer", return_value=mock_producer
-        ):
+        with patch("confluent_kafka.Producer", return_value=mock_producer):
             p.open()
         assert p._producer is mock_producer
 
@@ -50,10 +46,7 @@ class TestDLQKafkaProducerProduce:
         )
         p = DLQKafkaProducer("localhost:9092", "dlq")
         p.produce(b"data")
-        assert any(
-            "called before open()" in r.message
-            for r in caplog.records
-        )
+        assert any("called before open()" in r.message for r in caplog.records)
 
     def test_produce_delegates_to_kafka_producer(self):
         p = DLQKafkaProducer("localhost:9092", "my.dlq")
@@ -73,9 +66,7 @@ class TestDLQKafkaProducerProduce:
         p._producer = mock_prod
 
         p.produce(b"data", key=None)
-        mock_prod.produce.assert_called_once_with(
-            "my.dlq", value=b"data", key=None
-        )
+        mock_prod.produce.assert_called_once_with("my.dlq", value=b"data", key=None)
 
     def test_produce_swallows_exception(self, caplog):
         import logging
@@ -91,9 +82,7 @@ class TestDLQKafkaProducerProduce:
 
         # Should NOT raise
         p.produce(b"data")
-        assert any(
-            "Failed to produce" in r.message for r in caplog.records
-        )
+        assert any("Failed to produce" in r.message for r in caplog.records)
 
 
 class TestDLQKafkaProducerFlush:
