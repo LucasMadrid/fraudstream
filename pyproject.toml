@@ -51,14 +51,14 @@ scoring = [
     "slowapi>=0.1.9",
 ]
 analytics = [
-    "trino>=0.328",
     "confluent-kafka[schema-registry]>=2.3",
     "fastavro>=1.9",
     "prometheus-client>=0.20",
     "pybreaker==1.4.1",
     "streamlit>=1.35",
-    "duckdb>=0.10",
+    "duckdb>=1.0",
     "pandas>=2.0",
+    "pyiceberg[pyarrow,s3fs]>=0.11",
 ]
 
 [tool.setuptools.packages.find]
@@ -93,7 +93,7 @@ target-version = "py311"
 select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["pipelines"]
+known-first-party = ["analytics", "pipelines"]
 
 [tool.uv.extra-build-dependencies]
 apache-beam = ["setuptools", "wheel"]

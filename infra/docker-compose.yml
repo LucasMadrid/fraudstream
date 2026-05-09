@@ -55,6 +55,7 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -131,6 +132,11 @@ services:
     depends_on:
       - flink-jobmanager
     networks: [fraudstream]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -sf http://flink-jobmanager:8081/taskmanagers | grep -q '\"taskmanagers\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
 
   # TECH DEBT: producer-api and load-generator are built and published via CI
   # (see .github/workflows/ci.yml build-images job) but not wired into compose
@@ -181,28 +187,6 @@ services:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8181 && printf 'GET /v1/config HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q '200'"]
       interval: 10s
       timeout: 5s
-      retries: 10
-
-  trino:
-    image: trinodb/trino:467
-    platform: linux/amd64
-    container_name: fraudstream-trino
-    hostname: trino
-    ports:
-      - "8083:8080"
-    volumes:
-      - ./trino/catalog:/etc/trino/catalog:ro
-      - ./trino/jvm.config:/etc/trino/jvm.config:ro
-      - trino-data:/data/trino
-    mem_limit: 3g
-    depends_on:
-      iceberg-rest:
-        condition: service_healthy
-    networks: [fraudstream]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
-      interval: 15s
-      timeout: 10s
       retries: 10
 
   postgres:
@@ -263,6 +247,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   streamlit:
     build:
@@ -278,14 +267,16 @@ services:
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=broker:29092
       - SCHEMA_REGISTRY_URL=http://schema-registry:8081
-      - TRINO_HOST=trino
-      - TRINO_PORT=8080
       - PYTHONPATH=/app
       - DLQ_TOPIC=txn.api.dlq
+      - PYICEBERG_CATALOG__ICEBERG__URI=http://iceberg-rest:8181
+      - PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/
+      - PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://minio:9000
+      - PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true
     depends_on:
       broker:
         condition: service_healthy
-      trino:
+      iceberg-rest:
         condition: service_healthy
     networks: [fraudstream]
     profiles: [analytics]
@@ -308,13 +299,18 @@ services:
     networks: [fraudstream]
     depends_on:
       - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   grafana-data:
   minio-data:
   postgres-data:
   fraudstream_redis_data:
-  trino-data:
+  prometheus-data:
 
 networks:
   fraudstream:
