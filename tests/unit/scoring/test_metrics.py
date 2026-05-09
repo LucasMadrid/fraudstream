@@ -10,19 +10,17 @@ class TestScoringMetricsExist:
             rule_flags_total,
         )
 
-    def test_rule_evaluations_total_is_counter(self):
-        from prometheus_client import Counter
-
+    def test_rule_evaluations_total_is_safe_counter(self):
         from pipelines.scoring.metrics import rule_evaluations_total
+        from pipelines.scoring.safe_metrics import SafeCounter
 
-        assert isinstance(rule_evaluations_total, Counter)
+        assert isinstance(rule_evaluations_total, SafeCounter)
 
-    def test_rule_flags_total_is_counter(self):
-        from prometheus_client import Counter
-
+    def test_rule_flags_total_is_safe_counter(self):
         from pipelines.scoring.metrics import rule_flags_total
+        from pipelines.scoring.safe_metrics import SafeCounter
 
-        assert isinstance(rule_flags_total, Counter)
+        assert isinstance(rule_flags_total, SafeCounter)
 
     def test_rule_evaluations_has_correct_labels(self):
         from pipelines.scoring.metrics import rule_evaluations_total
