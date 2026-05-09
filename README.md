@@ -1,54 +1,70 @@
-# FraudStream — Real-Time Fraud Detection at Scale
+<div align="center">
 
-Stop fraud before it lands. FraudStream processes payment transactions in milliseconds — enriching every event with velocity signals, geolocation, and device fingerprints, then evaluating them against a hot-configurable rule engine — all on Apache Kafka and Flink, with full Prometheus observability, durable Iceberg analytics, and a Feast feature store out of the box.
+# 🔥 FraudStream
+
+**Real-Time Fraud Detection at Scale**
+
+[![CI](https://github.com/LucasMadrid/fraudstream/actions/workflows/ci.yml/badge.svg)](https://github.com/LucasMadrid/fraudstream/actions/workflows/ci.yml)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen.svg)](#-testing)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Kafka](https://img.shields.io/badge/Apache%20Kafka-KRaft-231F20?logo=apachekafka)](https://kafka.apache.org/)
+[![Flink](https://img.shields.io/badge/Apache%20Flink-PyFlink%202.x-E6526F?logo=apacheflink)](https://flink.apache.org/)
+[![Iceberg](https://img.shields.io/badge/Apache%20Iceberg-Analytics-4E9FD1)](https://iceberg.apache.org/)
+
+<br/>
+
+*Stop fraud before it lands.* FraudStream processes payment transactions in **under 100ms** — enriching every event with velocity signals, geolocation, and device fingerprints, then evaluating them against a hot-configurable rule engine — all on Apache Kafka and PyFlink, with full Prometheus observability, durable Iceberg analytics, and a Feast feature store out of the box.
+
+<br/>
+
+**This is not a tutorial.** FraudStream is a production-grade streaming system built the way you'd build it at a fintech company — with spec-driven development, constitution-driven architecture (11 principles, 11 documented design decisions), dead-letter queues at every stage, circuit breakers on every external write, and an 80%+ test coverage gate enforced in CI. It exists to demonstrate that real-time fraud detection can be built end-to-end in Python without compromising on reliability or performance.
+
+</div>
 
 ---
 
-## Table of Contents
+## ✨ Key Features
 
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-- [How It Works](#how-it-works)
+- **⚡ Sub-100ms end-to-end** — From Kafka ingest to fraud decision, every transaction is scored within a 100ms latency budget
+- **🔍 8 configurable fraud rules** across 3 families (velocity, impossible travel, new device) — tunable via YAML, no code changes
+- **🧊 Apache Iceberg analytics** — Every enriched transaction and fraud decision is durably written to Iceberg tables with ≤5s SLA
+- **🏪 Feast feature store** — Online feature serving with a hard 3ms timeout and zero-value fallback (never blocks scoring)
+- **📊 Full observability stack** — Prometheus metrics, Grafana dashboards, and alert rules ship out of the box
+- **🛡️ Dead-letter queues at every stage** — Ingestion DLQ, processing DLQ, and alert DLQ ensure no event is silently dropped
+- **🔄 Circuit breakers** — `pybreaker` wraps Iceberg writes; 3 consecutive failures open the breaker, protecting the hot path
+- **📈 Streamlit analytics dashboard** — 6 pages: live feed, fraud rate trends, rule triggers, model comparison, DLQ inspector, shadow rules
+- **🏗️ Spec-driven development** — 9 completed specs with research docs, data models, contracts, and task checklists
+- **🧪 330+ tests** — Unit, integration, contract, performance, and load tests with an 80% coverage gate in CI
+
+---
+
+## 📑 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Architecture](#-architecture)
+- [How It Works](#-how-it-works)
   - [Enrichment Pipeline](#enrichment-pipeline)
   - [Fraud Rule Families](#fraud-rule-families)
   - [Alert Persistence](#alert-persistence)
   - [Analytics Persistence Layer](#analytics-persistence-layer)
   - [Feature Serving Contract](#feature-serving-contract)
   - [Analytics Consumer Layer](#analytics-consumer-layer)
-- [Services](#services)
-- [Configuration](#configuration)
-  - [Fraud Rules](#fraud-rules)
-  - [Environment Variables](#environment-variables)
-  - [Kafka Topics](#kafka-topics)
-- [Management API](#management-api)
-  - [Endpoints](#endpoints)
-  - [Security](#security)
-  - [Example](#example)
-- [Observability](#observability)
-  - [Key Metrics](#key-metrics)
-  - [Dashboards and Alerts](#dashboards-and-alerts)
-- [Make Targets](#make-targets)
-  - [Infrastructure](#infrastructure)
-  - [Running](#running)
-  - [Testing](#testing)
-- [Development](#development)
-- [Project Structure](#project-structure)
-- [Design Decisions & Tradeoffs](#design-decisions--tradeoffs)
-  - [1. Stream Processing Runtime](#1-stream-processing-runtime--pyflink-over-java-flink-and-bytewax)
-  - [2. State Backend](#2-state-backend--rocksdb--incremental-checkpoints)
-  - [3. Velocity Windows](#3-velocity-windows--mapstateminute_bucket-over-sliding-event-time-windows)
-  - [4. Serialisation](#4-serialisation--avro-fastavro-over-protobuf-and-json)
-  - [5. Kafka Producer Guarantees](#5-kafka-producer-guarantees--acksall--idempotent)
-  - [6. GeoIP Lookup](#6-geoip-lookup--embedded-maxmind-reader-over-external-api)
-  - [7. Fraud Rule Configuration](#7-fraud-rule-configuration--yaml-file-over-database-or-hardcoded-rules)
-  - [8. Alert Persistence](#8-alert-persistence--dual-sink-kafka--postgresql)
-  - [9. Metrics Bridge](#9-metrics-bridge--daemon-consumer-threads)
-  - [10. Analytics Persistence](#10-analytics-persistence--apache-iceberg--pyiceberg-over-flink-iceberg-connector)
-  - [11. Feature Serving Contract](#11-feature-serving-contract--featureservingclient-with-3ms-timeout)
+- [Performance](#-performance)
+- [Services](#-services)
+- [Configuration](#-configuration)
+- [Management API](#-management-api)
+- [Observability](#-observability)
+- [Make Targets](#-make-targets)
+- [Development](#-development)
+- [Project Structure](#-project-structure)
+- [Design Decisions & Tradeoffs](#-design-decisions--tradeoffs)
+- [Contributing](#-contributing)
+- [License](#-license)
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 # 1. Install Python dependencies
@@ -76,60 +92,90 @@ make flink-job
 make generate
 ```
 
-**Prerequisites**: Docker + Docker Compose, Python 3.11, and a free [MaxMind GeoLite2 licence key](https://www.maxmind.com/en/geolite2/signup) exported as `MAXMIND_LICENCE_KEY`.
+> **Prerequisites**: Docker + Docker Compose, Python 3.11, and a free [MaxMind GeoLite2 licence key](https://www.maxmind.com/en/geolite2/signup) exported as `MAXMIND_LICENCE_KEY`.
 
 ---
 
-## Architecture
+## 🏛️ Architecture
 
 ```mermaid
 flowchart LR
-    Client(["Client"])
+    Client(["🖥️ Client"])
 
     subgraph Kafka["Kafka (KRaft)"]
         direction TB
         RawTopic[["txn.api"]]
         EnrichedTopic[["txn.enriched"]]
         AlertsTopic[["txn.fraud.alerts"]]
+        DLQ1[["txn.api.dlq"]]
+        DLQ2[["txn.processing.dlq"]]
+        DLQ3[["txn.fraud.alerts.dlq"]]
     end
 
     subgraph Flink["Apache Flink (PyFlink 2.x)"]
         direction TB
-        Enrichment["Enrichment\ndedup · velocity · geo · device"]
-        Scoring["Fraud Rule Engine\n8 configurable rules"]
+        Enrichment["🔄 Enrichment<br/>dedup · velocity · geo · device"]
+        Scoring["⚖️ Fraud Rule Engine<br/>8 configurable rules"]
     end
 
-    subgraph Analytics["Analytics Persistence Layer"]
+    subgraph Analytics["Analytics & Feature Store"]
         direction TB
-        IcebergEnriched[("enriched_transactions\n≤5s · by event_day")]
-        IcebergDecisions[("fraud_decisions\n≤5s · by transaction_id")]
-        Feast["Feast\nonline + offline store"]
-        Trino["Trino · SQL over Iceberg"]
+        IcebergEnriched[("🧊 enriched_transactions<br/>≤5s · partitioned by event_day")]
+        IcebergDecisions[("🧊 fraud_decisions<br/>≤5s · partitioned by transaction_id")]
+        Feast["🏪 Feast<br/>online + offline store"]
+        Trino["🔎 Trino · SQL over Iceberg"]
     end
 
-    PG[("PostgreSQL\nfraud_alerts")]
-    Grafana["Prometheus + Grafana"]
+    subgraph Observe["Observability"]
+        Grafana["📊 Prometheus + Grafana"]
+        Streamlit["📈 Streamlit Dashboard"]
+    end
+
+    PG[("🐘 PostgreSQL<br/>fraud_alerts")]
 
     Client --> RawTopic
+    Client -->|schema error| DLQ1
     RawTopic --> Enrichment
     Enrichment --> Scoring
     Enrichment -->|enriched| EnrichedTopic
+    Enrichment -->|processing error| DLQ2
     Enrichment --> IcebergEnriched
     Enrichment --> Feast
     Scoring -->|alerts| AlertsTopic
+    Scoring -->|delivery failure| DLQ3
     Scoring --> PG
     Scoring --> IcebergDecisions
+    AlertsTopic --> Streamlit
 
+    style Kafka fill:#1a1a2e,color:#eee,stroke:#4a4a8a
     style Flink fill:#1a1a2e,color:#eee,stroke:#4a4a8a
-    style Scoring fill:#3b1f4a,color:#eee,stroke:#7a4a9a
     style Analytics fill:#0a2010,color:#eee,stroke:#2a6a3a
+    style Observe fill:#1a1020,color:#eee,stroke:#6a3a7a
+    style Scoring fill:#3b1f4a,color:#eee,stroke:#7a4a9a
 ```
 
 Transactions enter via Kafka (`txn.api`), are processed by the Flink job through four enrichment stages, evaluated against fraud rules, and routed to five outputs: the enriched Kafka topic, the fraud alerts topic, PostgreSQL, Iceberg (two tables), and the Feast feature store. A metrics bridge in the job process feeds Prometheus from the two Kafka topics. Trino provides a SQL interface over both Iceberg tables for analytics and audit queries without touching the scoring hot path.
 
+### 🔁 Transaction Lifecycle
+
+The path of a single transaction through the system:
+
+```mermaid
+flowchart TD
+    A["📥 Transaction received<br/><i>txn.api (Avro)</i>"] --> B["🔑 Deduplication<br/><i>48h TTL on transaction_id</i>"]
+    B -->|duplicate| X1["🗑️ Dropped"]
+    B -->|unique| C["📊 Velocity Enrichment<br/><i>1min / 5min / 24h windows</i>"]
+    C --> D["🌍 Geolocation<br/><i>MaxMind GeoLite2 · ~10µs</i>"]
+    D --> E["📱 Device Fingerprint<br/><i>known/new device per API key</i>"]
+    E --> F["⚖️ Rule Evaluation<br/><i>8 rules · 3 families</i>"]
+    F -->|clean| G["✅ Enriched output<br/><i>txn.enriched + Iceberg + Feast</i>"]
+    F -->|flagged| H["🚨 Fraud Alert<br/><i>Kafka + PostgreSQL + Iceberg</i>"]
+
+```
+
 ---
 
-## How It Works
+## 🔍 How It Works
 
 ### Enrichment Pipeline
 
@@ -201,50 +247,13 @@ Four pre-built analyst views ship in `analytics/views/`:
 
 The `FeatureServingClient` (`pipelines/scoring/clients/feature_serving.py`) wraps the Feast online store with a **3ms hard timeout** enforced via `concurrent.futures.ThreadPoolExecutor`. Every call to `get_features()` returns a `FeatureVector` — never raises. On timeout, store outage, or cache miss the client returns `ZERO_FEATURE_VECTOR` and increments the appropriate Prometheus counter.
 
-**Fallback tiers**:
-
-| Condition | Counter | Returned value |
-|---|---|---|
-| Store responds with all `None` values (new account) | `feature_store_miss_total` | `ZERO_FEATURE_VECTOR` |
-| Any field is `None` (partial response) | `feature_store_miss_total` | `ZERO_FEATURE_VECTOR` |
-| Response exceeds 3ms timeout | `feature_store_fallback_total{reason="timeout"}` | `ZERO_FEATURE_VECTOR` |
-| Store raises any exception | `feature_store_fallback_total{reason="unavailable"}` | `ZERO_FEATURE_VECTOR` |
-
 The client is wired into the Flink scoring job via `_FeatureEnrichmentFunction` (a `MapFunction` in `pipelines/scoring/job_extension.py`). The `FeatureStoreStalenessHigh` Prometheus alert fires when `feature_materialization_lag_ms` exceeds 30 s for a full 60 s window, indicating that the Feast push source has stalled.
 
 See [`specs/007-feature-serving-contract/quickstart.md`](specs/007-feature-serving-contract/quickstart.md) for runnable seed + invocation examples covering all four scenarios.
 
 ### Analytics Consumer Layer
 
-The Streamlit analytics app (`analytics/app/`) satisfies **Constitution Principle X** — making pipeline activity observable to fraud analysts and operations engineers without touching the scoring hot path.
-
-**Architecture**: A single `AnalyticsKafkaConsumer` daemon thread (consumer group `analytics.dashboard`) drains `txn.fraud.alerts` into a `queue.Queue(maxsize=500)`. All Streamlit pages read from this shared buffer. Historical views query Trino over Iceberg — zero Kafka re-consumption.
-
-**Consumer group isolation**: `analytics.dashboard` is completely independent of `flink-scoring-job`. Stopping or restarting the analytics tier does not affect scoring offsets.
-
-**Pages**:
-
-| Page | Description |
-|------|-------------|
-| **Home** | Consumer health panel: thread status, consumer lag, buffered event count |
-| **1 · Live Feed** | Real-time fraud alerts from `txn.fraud.alerts` — ≤ 2 s p95 latency, 500-event dedup buffer |
-| **2 · Fraud Rate** | Historical daily fraud rate trends via Trino (`v_fraud_rate_daily`) |
-| **3 · Rule Triggers** | Rule trigger leaderboard and per-rule daily drill-down (`v_rule_triggers`) |
-| **4 · Model Compare** | Side-by-side model version score distribution (`v_model_versions`) |
-| **5 · DLQ Inspector** | Dead-letter queue browser with PII masking — ephemeral consumer group, no committed offsets |
-| **6 · Shadow Rules** | Shadow rule monitor (operational tooling carried over from prior feature) |
-
-**Prometheus metrics** exposed at `:8004/metrics`:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `analytics_consumer_lag` | Gauge | Unread messages in `txn.fraud.alerts` for `analytics.dashboard` group |
-| `analytics_events_consumed_total` | Counter | Total events consumed from the topic |
-| `analytics_consumer_restarts_total` | Counter | Consumer thread reconnection count |
-
-Alert rules in `infra/prometheus/alerts/analytics_consumer.yml`:
-- `AnalyticsConsumerLagHigh` — lag > 1000 for 2 min (warning)
-- `AnalyticsConsumerDown` — metric absent for 3 min (critical)
+A single `AnalyticsKafkaConsumer` daemon thread (consumer group `analytics.dashboard`) drains `txn.fraud.alerts` into a shared buffer. Streamlit pages read from this buffer for live data; historical views query Trino over Iceberg — zero Kafka re-consumption. The consumer group is completely independent of `flink-scoring-job`, so stopping the analytics tier has no effect on scoring offsets.
 
 Start the analytics tier:
 
@@ -255,7 +264,27 @@ make analytics-down  # stop analytics tier (leaves Core tier running)
 
 ---
 
-## Services
+## ⚡ Performance
+
+FraudStream is built around explicit performance budgets enforced through testing and monitoring:
+
+| SLO | Target | How it's enforced |
+|-----|--------|-------------------|
+| **End-to-end latency** | < 100ms p99 | Flink enrichment + scoring pipeline budget; side outputs add zero latency |
+| **Iceberg write** | ≤ 5s from Kafka receipt | `iceberg_flush_duration_seconds` histogram; p99 must stay below 4s |
+| **Feature store read** | < 3ms hard timeout | `concurrent.futures` with `future.result(timeout=0.003)`; falls back to `ZERO_FEATURE_VECTOR` |
+| **GeoIP lookup** | ~5–20µs per lookup | Embedded MaxMind C extension + `/24` subnet LRU cache (10K entries) |
+| **Test coverage** | ≥ 80% | CI coverage gate — PRs below threshold are blocked |
+| **Live feed latency** | ≤ 2s p95 | Analytics consumer → Streamlit render path |
+
+**Throughput characteristics**:
+- Arrow batching (`bundle.size=1000`, `bundle.time=15ms`) amortises JVM–Python boundary overhead to ~10–50µs per record
+- Kafka producer: `acks=all`, `enable.idempotence=true`, `linger.ms=5` — adds ~1–2ms round-trip per batch
+- Iceberg flush: `ICEBERG_FLUSH_INTERVAL_S=1`, `ICEBERG_BUFFER_MAX=100` — worst-case flush under 1s
+
+---
+
+## 🌐 Services
 
 | Service | URL | Credentials |
 |---|---|---|
@@ -266,18 +295,14 @@ make analytics-down  # stop analytics tier (leaves Core tier running)
 | Grafana | `http://localhost:3000` | admin / admin |
 | MinIO console | `http://localhost:9001` | minioadmin / minioadmin |
 | PostgreSQL | `localhost:5432` | fraudstream / fraudstream |
-| Job metrics endpoint | `http://localhost:8002/metrics` | — |
 | Management API | `http://localhost:8090` | `X-Api-Key` header (optional) |
 | Iceberg REST catalog | `http://localhost:8181` | — |
 | Trino | `http://localhost:8080` | — |
 | Streamlit analytics app | `http://localhost:8501` | — |
-| Analytics metrics endpoint | `http://localhost:8004/metrics` | — |
-
-All core services start with `make bootstrap` or `make infra-up`. The analytics tier (`iceberg-rest`, `trino`) starts with `docker compose up -d iceberg-rest trino`. The Streamlit app starts with `make analytics-up`.
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 ### Fraud Rules
 
@@ -285,7 +310,8 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 
 ### Environment Variables
 
-**Core pipeline**:
+<details>
+<summary><b>Core pipeline</b></summary>
 
 | Variable | Default | Description |
 |---|---|---|
@@ -293,13 +319,16 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 | `MAXMIND_LICENCE_KEY` | — | Required for `make update-geoip` |
 | `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password |
 | `POSTGRES_PASSWORD` | `fraudstream` | PostgreSQL password |
-| `FRAUD_ALERTS_DB_URL` | `postgresql://fraudstream:fraudstream@...` | PostgreSQL connection URL |
+| `FRAUD_ALERTS_DB_URL` | `postgresql://fraudstream:***@...` | PostgreSQL connection URL |
 | `MANAGEMENT_API_KEY` | — | API key for management endpoints (unset = open in dev) |
 | `MANAGEMENT_CORS_ORIGINS` | — | Comma-separated allowed CORS origins (disabled by default) |
 | `LOG_LEVEL` | `INFO` | Job log level (`DEBUG`, `INFO`, `WARNING`) |
 | `FRAUDSTREAM_ENV` | — | Set to `local` for local dev (enables MinIO defaults, SQLite Feast store) |
 
-**Analytics persistence layer**:
+</details>
+
+<details>
+<summary><b>Analytics persistence layer</b></summary>
 
 | Variable | Default | Description |
 |---|---|---|
@@ -312,6 +341,8 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 | `ICEBERG_FLUSH_INTERVAL_S` | `1` | Seconds between Iceberg sink flushes |
 | `ICEBERG_BUFFER_MAX` | `100` | Max records per flush batch (enrichment sink) |
 | `ICEBERG_DECISIONS_BUFFER_MAX` | `100` | Max records per flush batch (decisions sink) |
+
+</details>
 
 ### Kafka Topics
 
@@ -326,7 +357,7 @@ Edit [`rules/rules.yaml`](rules/rules.yaml) to change thresholds, enable/disable
 
 ---
 
-## Management API
+## 🎛️ Management API
 
 The fraud rule engine exposes a REST management API on **port 8090** for operational control without a job restart.
 
@@ -362,7 +393,7 @@ Mode changes are persisted immediately to `rules/rules.yaml` and take effect in 
 
 ---
 
-## Observability
+## 📡 Observability
 
 The Flink job exposes Prometheus metrics at `:8002/metrics`. A **Kafka metrics bridge** runs as two daemon threads inside the job process, consuming `txn.fraud.alerts` and `txn.enriched` to increment counters in the main process — necessary because PyFlink workers are JVM-spawned and cannot share Python registry objects with the HTTP server.
 
@@ -400,7 +431,7 @@ Monitor `iceberg_flush_duration_seconds` p99: if it approaches 4 s, reduce `ICEB
 
 ---
 
-## Make Targets
+## 🛠️ Make Targets
 
 ### Infrastructure
 
@@ -434,7 +465,7 @@ Override traffic defaults:
 COUNT=100 DELAY=200 SUSPICIOUS_RATE=0.5 make generate
 ```
 
-### Testing
+### 🧪 Testing
 
 ```bash
 make test              # unit tests + coverage gate (80%)
@@ -444,7 +475,7 @@ make test-integration  # integration tests (requires Docker)
 
 ---
 
-## Development
+## 💻 Development
 
 ```bash
 # Lint
@@ -473,7 +504,10 @@ python scripts/validate_feast_schemas.py \
 
 ---
 
-## Project Structure
+## 📁 Project Structure
+
+<details>
+<summary><b>Click to expand full project tree</b></summary>
 
 ```
 pipelines/
@@ -508,7 +542,7 @@ pipelines/
       alert_postgres.py           # AlertPostgresSink — INSERT INTO fraud_alerts
       iceberg_decisions.py        # IcebergDecisionsSink — side output → iceberg.fraud_decisions
     schemas/                      # fraud-alert-v1.avsc, fraud-alert-dlq-v1.avsc
-    clients/                        # Feature 007 — Feature serving contract
+    clients/                      # Feature 007 — Feature serving contract
       feature_serving.py          # FeatureServingClient (3ms timeout, zero-value fallback)
     job_extension.py              # _FeatureEnrichmentFunction (Flink MapFunction wrapper)
     types.py                      # FraudDecision dataclass + FeatureVector + ZERO_FEATURE_VECTOR
@@ -640,9 +674,13 @@ specs/
     schema-evolution.yml          # Avro schema change gate (blocks on DDL/Feast misalignment)
 ```
 
+</details>
+
 ---
 
-## Design Decisions & Tradeoffs
+## 🧠 Design Decisions & Tradeoffs
+
+> These 11 decisions form the architectural constitution of FraudStream. Each documents what was chosen, what was rejected, and the tradeoff explicitly accepted.
 
 ### 1. Stream Processing Runtime — PyFlink over Java Flink and Bytewax
 
@@ -802,3 +840,32 @@ specs/
 **Fallback contract**: Every code path through `get_features()` returns a `FeatureVector` — exceptions are caught at the `future.result()` boundary and at the executor level. The scoring rule engine always receives a valid object; it never sees `None` or raises on feature unavailability.
 
 **Tradeoff accepted**: The `ThreadPoolExecutor(max_workers=1)` means only one outstanding Feast call at a time per `FeatureServingClient` instance. Under load, requests queue behind the pool. At 3ms timeout this is effectively bounded — the pool thread is released (or times out) before the next Flink operator invocation at normal throughput. A timed-out future leaves the background thread running until Feast responds or times out internally; executor `shutdown(wait=False)` at job teardown is intentional to avoid a blocking drain.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! FraudStream uses spec-driven development — every feature starts with a spec document before any code is written.
+
+1. **Fork** the repository
+2. **Create a feature branch** from `main`
+3. **Write or update a spec** in `specs/` if adding new functionality
+4. **Ensure tests pass**: `make test` (80% coverage gate)
+5. **Lint**: `ruff check .` and `mypy pipelines/`
+6. **Submit a PR** with a clear description of what changed and why
+
+Please read the existing specs in `specs/` to understand the project's development methodology before contributing.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+
+**Built with** ❤️ **using Apache Kafka · PyFlink · Apache Iceberg · Feast · Prometheus**
+
+</div>
