@@ -108,19 +108,35 @@ class AlertKafkaSink:
                 alert.transaction_id,
                 err,
             )
-            dlq_payload = self._serialise_dlq(
-                alert,
-                error_type="DELIVERY_FAILURE",
-                error_message=str(err),
-            )
-            self._producer.produce(
-                topic=self._config.fraud_alerts_dlq_topic,
-                key=alert.transaction_id.encode(),
-                value=dlq_payload,
-            )
+            try:
+                dlq_payload = self._serialise_dlq(
+                    alert,
+                    error_type="DELIVERY_FAILURE",
+                    error_message=str(err),
+                )
+                self._producer.produce(
+                    topic=self._config.fraud_alerts_dlq_topic,
+                    key=alert.transaction_id.encode(),
+                    value=dlq_payload,
+                    on_delivery=self._on_dlq_delivery,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Failed to route txn=%s to DLQ", alert.transaction_id,
+                )
+
+    @staticmethod
+    def _on_dlq_delivery(err, msg) -> None:  # noqa: ARG004
+        """Delivery report callback for DLQ produce."""
+        if err:
+            logger.error("DLQ delivery failed: %s", err)
 
     def emit(self, alert: FraudAlert) -> None:
         """Produce a FraudAlert to the fraud alerts topic."""
+        if self._producer is None:
+            raise RuntimeError(
+                "AlertKafkaSink.open() must be called before emit()"
+            )
         payload = self._serialise(alert)
         self._producer.produce(
             topic=self._config.fraud_alerts_topic,
@@ -133,3 +149,10 @@ class AlertKafkaSink:
     def flush(self) -> None:
         if self._producer:
             self._producer.flush()
+
+    def close(self) -> None:
+        """Flush pending messages, close the producer, and release resources."""
+        self.flush()
+        if self._producer is not None:
+            self._producer.flush(timeout=10)
+            self._producer = None

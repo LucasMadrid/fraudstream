@@ -177,3 +177,90 @@ class TestAlertKafkaSinkSerialisation:
         payload = sink._serialise(alert)
         assert isinstance(payload, bytes)
         assert len(payload) > 0
+
+
+class TestAlertKafkaSinkClose:
+    def test_close_flushes_and_nulls_producer(self):
+        from pipelines.scoring.config import ScoringConfig
+        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
+
+        config = ScoringConfig()
+        sink = AlertKafkaSink(config)
+
+        mock_producer = MagicMock()
+        sink._producer = mock_producer
+
+        sink.close()
+
+        mock_producer.flush.assert_called_with(timeout=10)
+        assert sink._producer is None
+
+    def test_close_idempotent(self):
+        from pipelines.scoring.config import ScoringConfig
+        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
+
+        config = ScoringConfig()
+        sink = AlertKafkaSink(config)
+
+        mock_producer = MagicMock()
+        sink._producer = mock_producer
+
+        sink.close()
+        sink.close()  # second call must not crash
+
+
+class TestAlertKafkaSinkLifecycle:
+    def test_emit_without_open_raises_runtime_error(self):
+        from pipelines.scoring.config import ScoringConfig
+        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
+
+        config = ScoringConfig()
+        sink = AlertKafkaSink(config)
+        alert = _make_alert()
+
+        with pytest.raises(RuntimeError, match="open\\(\\) must be called"):
+            sink.emit(alert)
+
+
+class TestAlertKafkaSinkDLQSafety:
+    def test_on_delivery_error_serialisation_failure_does_not_crash(self):
+        from pipelines.scoring.config import ScoringConfig
+        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
+
+        config = ScoringConfig()
+        sink = AlertKafkaSink(config)
+        alert = _make_alert()
+
+        mock_producer = MagicMock()
+        sink._producer = mock_producer
+
+        mock_err = MagicMock()
+        mock_err.__bool__ = lambda self: True
+        mock_msg = MagicMock()
+
+        # Make _serialise_dlq throw
+        sink._serialise_dlq = MagicMock(side_effect=Exception("avro boom"))
+
+        # Must not raise
+        sink._on_delivery(mock_err, mock_msg, alert)
+
+    def test_on_delivery_dlq_produce_has_callback(self):
+        from pipelines.scoring.config import ScoringConfig
+        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
+
+        config = ScoringConfig()
+        sink = AlertKafkaSink(config)
+        alert = _make_alert()
+
+        mock_producer = MagicMock()
+        sink._producer = mock_producer
+
+        mock_err = MagicMock()
+        mock_err.__bool__ = lambda self: True
+        mock_msg = MagicMock()
+
+        sink._on_delivery(mock_err, mock_msg, alert)
+
+        call_kwargs = mock_producer.produce.call_args[1]
+        assert "on_delivery" in call_kwargs
+        assert call_kwargs["on_delivery"] is AlertKafkaSink._on_dlq_delivery

@@ -174,7 +174,7 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
 
         def close(self):
             if self._kafka_sink:
-                self._kafka_sink.flush()
+                self._kafka_sink.close()
             if self._pg_sink:
                 self._pg_sink.close()
 
