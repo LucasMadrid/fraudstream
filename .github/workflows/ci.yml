@@ -63,7 +63,7 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing,scoring]"
+          pip install -e ".[dev,processing,scoring,analytics]"
 
       - name: Run unit tests with coverage
         run: |
@@ -400,7 +400,7 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing,scoring]"
+          pip install -e ".[dev,processing,scoring,analytics]"
 
       - name: Download GeoLite2 database
         # MAXMIND_LICENCE_KEY is a repository secret (see docs/security-policy.md).
@@ -596,7 +596,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,processing,scoring]"
+          pip install -e ".[dev,processing,scoring,analytics]"
 
       - name: Run latency benchmark
         run: |
