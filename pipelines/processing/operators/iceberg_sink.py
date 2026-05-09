@@ -40,18 +40,41 @@ class _DLQEvent:
     batch_size: int
 
 
-def _emit_dlq_event(event: _DLQEvent) -> None:
-    """Log a structured DLQ event to stderr."""
-    dlq_logger.warning(
-        json.dumps(
-            {
-                "event": "iceberg_sink_dlq",
-                "transaction_id": event.transaction_id,
-                "reason": event.reason,
-                "batch_size": event.batch_size,
-            }
-        )
-    )
+def _emit_dlq_event(
+    event: _DLQEvent,
+    dlq_producer=None,
+) -> None:
+    """Log a structured DLQ event to stderr and optionally produce to Kafka."""
+    payload = {
+        "event": "iceberg_sink_dlq",
+        "transaction_id": event.transaction_id,
+        "reason": event.reason,
+        "batch_size": event.batch_size,
+    }
+    dlq_logger.warning(json.dumps(payload))
+
+    if dlq_producer is not None:
+        try:
+            from pipelines.processing.shared.dlq_sink import (
+                build_dlq_record,
+                serialise_dlq_record,
+            )
+
+            rec = build_dlq_record(
+                source_topic="iceberg_sink",
+                source_partition=0,
+                source_offset=0,
+                original_payload_bytes=json.dumps(payload).encode(),
+                error_type="iceberg_sink_dlq",
+                error_message=event.reason,
+                transaction_id=event.transaction_id,
+            )
+            dlq_producer.produce(
+                serialise_dlq_record(rec),
+                key=event.transaction_id,
+            )
+        except Exception:
+            dlq_logger.exception("Failed to produce DLQ event to Kafka")
 
 
 def _increment_counter(counter_name: str) -> None:
@@ -597,11 +620,11 @@ except ImportError:
         def invoke(self, value: dict, context=None) -> None:  # type: ignore[no-untyped-def]
             """Append record to buffer and flush if conditions met."""
             try:
+                self._buffer.append(value)
+
                 now = time.time()
                 if now - self._last_flush_time_sec >= 1.0:
                     self._flush()
-
-                self._buffer.append(value)
 
                 if len(self._buffer) >= ICEBERG_BUFFER_MAX:
                     self._flush()
@@ -635,16 +658,34 @@ except ImportError:
             )
 
             try:
-                if self._catalog_loaded and self._table is not None:
+                if self._table is None:
+                    logger.warning(
+                        "Iceberg table not loaded; DLQ'ing %d records",
+                        batch_size,
+                    )
+                    for record in deduplicated:
+                        txn_id = record.get(
+                            "transaction_id", "unknown"
+                        )
+                        _emit_dlq_event(
+                            _DLQEvent(
+                                transaction_id=txn_id,
+                                reason="iceberg_table_not_loaded",
+                                batch_size=1,
+                            )
+                        )
+                elif self._catalog_loaded:
                     pa_table = self._records_to_arrow_table(deduplicated)
                     if self._breaker:
                         self._breaker.call(self._table.append, pa_table)
                     else:
                         self._table.append(pa_table)
-                    logger.info(f"Flushed {batch_size} records to iceberg.enriched_transactions")
+                    logger.info(
+                        f"Flushed {batch_size} records to "
+                        "iceberg.enriched_transactions"
+                    )
 
-                    # Push to Feast after successful Iceberg write (best-effort; failures
-                    # are logged and counted but do not fail the Iceberg flush).
+                    # Push to Feast after successful Iceberg write
                     try:
                         self._push_to_feast(pa_table, deduplicated)
                     except Exception as e:

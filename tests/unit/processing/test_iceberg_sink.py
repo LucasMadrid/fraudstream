@@ -373,3 +373,34 @@ class TestIcebergEnrichedSinkFlushBehavior:
         # Should return early without error
         sink._flush()
         assert sink._buffer == []
+
+    def test_flush_with_none_table_emits_dlq(self, caplog):
+        """When self._table is None, every record must be DLQ'd — no silent drops."""
+        caplog.set_level(logging.WARNING, logger="dlq")
+
+        sink = IcebergEnrichedSink()
+        sink._table = None  # simulate catalog load failure
+        sink._catalog_loaded = False
+        sink._breaker = None
+
+        records = [
+            {"transaction_id": f"txn-{i:03d}"} for i in range(3)
+        ]
+        sink._buffer = list(records)
+
+        sink._flush()
+
+        # Buffer must be cleared
+        assert sink._buffer == []
+
+        # Each record should produce a DLQ log entry with the right reason
+        dlq_messages = [
+            r.message
+            for r in caplog.records
+            if r.name == "dlq"
+        ]
+        assert len(dlq_messages) == 3
+        for msg in dlq_messages:
+            parsed = json.loads(msg)
+            assert parsed["reason"] == "iceberg_table_not_loaded"
+            assert parsed["event"] == "iceberg_sink_dlq"

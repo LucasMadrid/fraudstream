@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import socket
 import time
 import uuid
@@ -42,11 +43,23 @@ _DLQ_SCHEMA = {
     ],
 }
 
-_PARSED_DLQ_SCHEMA = fastavro.parse_schema(_DLQ_SCHEMA)
+
+def _get_parsed_dlq_schema():
+    """Lazy parse of DLQ Avro schema — avoids import-time crash."""
+    global _PARSED_DLQ_SCHEMA_CACHE  # noqa: PLW0603
+    try:
+        return _PARSED_DLQ_SCHEMA_CACHE
+    except NameError:
+        _PARSED_DLQ_SCHEMA_CACHE = fastavro.parse_schema(_DLQ_SCHEMA)
+        return _PARSED_DLQ_SCHEMA_CACHE
+
+
 _PROCESSOR_HOST = socket.gethostname()
 
 # Confluent Schema Registry wire format magic byte
 _CONFLUENT_MAGIC = b"\x00"
+
+_dlq_logger = logging.getLogger(__name__)
 
 
 def build_dlq_record(
@@ -86,9 +99,64 @@ def serialise_dlq_record(record: dict, schema_id: int = 0) -> bytes:
     Format: magic byte (0x00) + 4-byte big-endian schema ID + Avro payload.
     """
     buf = io.BytesIO()
-    fastavro.schemaless_writer(buf, _PARSED_DLQ_SCHEMA, record)
+    fastavro.schemaless_writer(buf, _get_parsed_dlq_schema(), record)
     avro_bytes = buf.getvalue()
 
     # Confluent wire format prefix
     prefix = _CONFLUENT_MAGIC + schema_id.to_bytes(4, "big")
     return prefix + avro_bytes
+
+
+class DLQKafkaProducer:
+    """Kafka producer that routes unprocessable events to a DLQ topic."""
+
+    def __init__(
+        self, bootstrap_servers: str, dlq_topic: str
+    ) -> None:
+        self._bootstrap_servers = bootstrap_servers
+        self._dlq_topic = dlq_topic
+        self._producer = None
+
+    def open(self) -> None:
+        """Create the underlying confluent_kafka.Producer."""
+        from confluent_kafka import Producer  # type: ignore[import-untyped]
+
+        self._producer = Producer(
+            {"bootstrap.servers": self._bootstrap_servers}
+        )
+        _dlq_logger.info(
+            "DLQKafkaProducer opened for topic=%s", self._dlq_topic
+        )
+
+    def produce(
+        self, record_bytes: bytes, key: str | None = None
+    ) -> None:
+        """Produce a serialised DLQ record to the DLQ topic."""
+        if self._producer is None:
+            _dlq_logger.error(
+                "DLQKafkaProducer.produce() called before open()"
+            )
+            return
+        try:
+            self._producer.produce(
+                self._dlq_topic,
+                value=record_bytes,
+                key=key.encode("utf-8") if key else None,
+            )
+        except Exception:
+            _dlq_logger.exception(
+                "Failed to produce DLQ record to %s",
+                self._dlq_topic,
+            )
+
+    def flush(self, timeout: float = 5.0) -> None:
+        """Flush pending produces (blocks up to *timeout* seconds)."""
+        if self._producer is not None:
+            self._producer.flush(timeout)
+
+    def close(self) -> None:
+        """Flush and release the producer."""
+        if self._producer is not None:
+            self._producer.flush(timeout=10.0)
+            self._producer = None
+            _dlq_logger.info("DLQKafkaProducer closed")
