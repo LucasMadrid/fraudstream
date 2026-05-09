@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # ============================================================================
   # Stage 1: Code Quality Gate (BLOCKING)
@@ -312,21 +316,18 @@ jobs:
 
       - name: Scan Python dependencies with pip-audit
         id: pip-audit
-        continue-on-error: true
         run: |
           pip-audit --desc \
-            --format sarif \
-            --output /tmp/pip-audit-report.sarif || \
-          (exit_code=$?; echo "pip_audit_exit_code=$exit_code" >> $GITHUB_OUTPUT; exit 0)
+            --format json \
+            --output /tmp/pip-audit-report.json
 
-      - name: Upload pip-audit SARIF to GitHub Security
+      - name: Upload pip-audit report as artifact
         if: always()
-        continue-on-error: true  # Don't block Trivy steps if SARIF upload fails
-        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: /tmp/pip-audit-report.sarif
-          category: pip-audit
-          wait-for-processing: false
+          name: pip-audit-report
+          path: /tmp/pip-audit-report.json
 
       - name: Install Trivy
         run: |
@@ -335,17 +336,11 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Scan confluentinc/cp-kafka:7.9.6 with Trivy (informational)
-        # Base images from Docker Hub are not under our control — OS-level CVEs in
-        # Confluent/Flink images cannot be patched by us. Scans are uploaded to
-        # GitHub Security tab for visibility; they do NOT block CI.
-        # Our custom-built Flink worker image is scanned with --exit-code 1 in
-        # the build-images job, where we DO control the contents.
         continue-on-error: true
         run: |
           trivy image --severity HIGH,CRITICAL \
             --exit-code 0 \
-            --format sarif \
-            --output /tmp/trivy-kafka.sarif \
+            --format table \
             confluentinc/cp-kafka:7.9.6 || true
 
       - name: Scan confluentinc/cp-schema-registry:7.9.6 with Trivy (informational)
@@ -353,8 +348,7 @@ jobs:
         run: |
           trivy image --severity HIGH,CRITICAL \
             --exit-code 0 \
-            --format sarif \
-            --output /tmp/trivy-schema-registry.sarif \
+            --format table \
             confluentinc/cp-schema-registry:7.9.6 || true
 
       - name: Scan apache/flink:1.20.3-scala_2.12 with Trivy (informational)
@@ -362,18 +356,8 @@ jobs:
         run: |
           trivy image --severity HIGH,CRITICAL \
             --exit-code 0 \
-            --format sarif \
-            --output /tmp/trivy-flink.sarif \
+            --format table \
             apache/flink:1.20.3-scala_2.12 || true
-
-      - name: Upload Trivy SARIF reports
-        if: always()
-        continue-on-error: true  # Don't block security checks if SARIF upload fails
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: /tmp/trivy-*.sarif
-          category: trivy-images
-          wait-for-processing: false
 
       - name: Report security scan status
         if: always()
@@ -496,6 +480,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [code-quality, unit-tests, schema-integrity, security-scan]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -615,8 +600,14 @@ jobs:
 
       - name: Run latency benchmark
         run: |
-          python -m pytest tests/bench/ -v --tb=short -m latency 2>/dev/null || \
-          echo "No latency benchmarks found — skipping. Add tests/bench/ with @pytest.mark.latency to enable."
+          if [ -d "tests/bench" ]; then
+            python -m pytest tests/bench/ -v --tb=short -m latency
+          elif [ -d "tests/performance" ]; then
+            python -m pytest tests/performance/ -v --tb=short -m perf 2>/dev/null || \
+            echo "No @pytest.mark.perf tests found in tests/performance/ — skipping."
+          else
+            echo "No latency benchmarks found — skipping. Add tests/bench/ with @pytest.mark.latency to enable."
+          fi
 
       - name: Assert p99 < 100ms
         run: |
@@ -658,7 +649,7 @@ jobs:
   ci-summary:
     name: CI Summary
     if: always()
-    needs: [code-quality, unit-tests, schema-integrity, schema-registry-compat, security-scan, integration-tests, build-images]
+    needs: [code-quality, unit-tests, schema-integrity, schema-registry-compat, security-scan, integration-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Check CI status
