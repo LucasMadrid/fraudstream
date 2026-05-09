@@ -235,44 +235,61 @@ try:  # pragma: no cover
 
             # Convert to PyArrow table and flush with timeout
             try:
-                import concurrent.futures
-
-                pa_table = self._records_to_arrow_table(deduplicated)
-
-                try:
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _exec:
-                        future = _exec.submit(self._breaker.call, self._table.append, pa_table)
-                        future.result(timeout=ICEBERG_FLUSH_TIMEOUT_SEC)
-                    logger.info(f"Flushed {batch_size} records to iceberg.enriched_transactions")
-
-                    # Push to Feast after successful Iceberg write (best-effort; failures
-                    # are logged and counted but do not fail the Iceberg flush).
-                    try:
-                        self._push_to_feast(pa_table, deduplicated)
-                    except Exception as e:
-                        logger.error(
-                            json.dumps(
-                                {
-                                    "event": "feast_push_failure",
-                                    "batch_size": batch_size,
-                                    "error": str(e),
-                                }
+                if self._table is None:
+                    logger.warning(
+                        "Iceberg table not loaded; DLQ'ing %d records",
+                        batch_size,
+                    )
+                    for record in deduplicated:
+                        txn_id = record.get("transaction_id", "unknown")
+                        _emit_dlq_event(
+                            _DLQEvent(
+                                transaction_id=txn_id,
+                                reason="iceberg_table_not_loaded",
+                                batch_size=1,
                             )
                         )
-                        self._increment_feast_counter()
+                else:
+                    import concurrent.futures
 
-                except concurrent.futures.TimeoutError:
-                    logger.warning(
-                        f"Iceberg flush timed out after {ICEBERG_FLUSH_TIMEOUT_SEC}s "
-                        f"for batch of {batch_size} records"
-                    )
-                    _emit_dlq_event(
-                        _DLQEvent(
-                            transaction_id=first_txn_id,
-                            reason="timeout",
-                            batch_size=batch_size,
+                    pa_table = self._records_to_arrow_table(deduplicated)
+
+                    try:
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _exec:
+                            future = _exec.submit(self._breaker.call, self._table.append, pa_table)
+                            future.result(timeout=ICEBERG_FLUSH_TIMEOUT_SEC)
+                        logger.info(
+                            f"Flushed {batch_size} records to iceberg.enriched_transactions"
                         )
-                    )
+
+                        # Push to Feast after successful Iceberg write (best-effort; failures
+                        # are logged and counted but do not fail the Iceberg flush).
+                        try:
+                            self._push_to_feast(pa_table, deduplicated)
+                        except Exception as e:
+                            logger.error(
+                                json.dumps(
+                                    {
+                                        "event": "feast_push_failure",
+                                        "batch_size": batch_size,
+                                        "error": str(e),
+                                    }
+                                )
+                            )
+                            self._increment_feast_counter()
+
+                    except concurrent.futures.TimeoutError:
+                        logger.warning(
+                            f"Iceberg flush timed out after {ICEBERG_FLUSH_TIMEOUT_SEC}s "
+                            f"for batch of {batch_size} records"
+                        )
+                        _emit_dlq_event(
+                            _DLQEvent(
+                                transaction_id=first_txn_id,
+                                reason="timeout",
+                                batch_size=batch_size,
+                            )
+                        )
 
             except Exception as e:
                 # Circuit breaker open, connection error, or other issue

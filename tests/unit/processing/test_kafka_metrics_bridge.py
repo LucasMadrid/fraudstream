@@ -88,10 +88,6 @@ class TestStartStop:
             kafka_metrics_bridge._stop_event.wait(timeout) or None
         )
 
-        # Use idents (unique per thread), not names — prior tests may have left
-        # threads named "metrics-bridge-*" alive from TestJobMain.main() calls.
-        before_idents = {t.ident for t in threading.enumerate()}
-
         with mock_patch("confluent_kafka.Consumer", return_value=mock_consumer):
             kafka_metrics_bridge.start(
                 brokers="localhost:9092",
@@ -100,19 +96,15 @@ class TestStartStop:
                 rules_yaml_path=str(yaml_file),
             )
 
-            import time
+            # _threads is set synchronously in start(), no race condition
+            assert len(kafka_metrics_bridge._threads) == 2
+            thread_names = {t.name for t in kafka_metrics_bridge._threads}
+            assert "metrics-bridge-alerts" in thread_names
+            assert "metrics-bridge-enriched" in thread_names
 
-            time.sleep(0.1)  # Give threads time to start
-
-            new_threads = [t for t in threading.enumerate() if t.ident not in before_idents]
-            new_names = {t.name for t in new_threads}
-            assert "metrics-bridge-alerts" in new_names
-            assert "metrics-bridge-enriched" in new_names
-
-            # Verify daemon flag on the newly spawned threads only
-            for t in new_threads:
-                if t.name in ("metrics-bridge-alerts", "metrics-bridge-enriched"):
-                    assert t.daemon is True
+            # Verify daemon flag
+            for t in kafka_metrics_bridge._threads:
+                assert t.daemon is True
 
             kafka_metrics_bridge.stop()
 
