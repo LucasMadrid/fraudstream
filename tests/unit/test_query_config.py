@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from analytics.queries.config import MAX_HOURS
+pyiceberg = pytest.importorskip("pyiceberg", reason="pyiceberg not installed (analytics extras)")
+duckdb = pytest.importorskip("duckdb", reason="duckdb not installed (analytics extras)")
+
+from analytics.queries.config import MAX_HOURS  # noqa: E402
 
 
 def test_max_hours_value():
