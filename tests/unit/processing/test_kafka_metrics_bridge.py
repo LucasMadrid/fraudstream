@@ -360,3 +360,81 @@ class TestEnrichedConsumerThread:
             _enriched_consumer_thread("localhost:9092", "txn.enriched", {"VEL-001": "velocity"})
 
         mock_consumer.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Thread safety — idempotency, health check, stop
+# ---------------------------------------------------------------------------
+class TestThreadSafety:
+    def test_start_is_idempotent(self, tmp_path):
+        """Calling start() twice must NOT spawn duplicate threads."""
+        from pipelines.processing import kafka_metrics_bridge
+
+        yaml_file = tmp_path / "rules.yaml"
+        yaml_file.write_text(
+            "- rule_id: VEL-001\n  family: velocity\n  enabled: true\n"
+        )
+
+        kafka_metrics_bridge.stop()  # clean slate
+
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        first_threads = list(kafka_metrics_bridge._threads)
+        assert len(first_threads) == 2
+
+        # Second call should be no-op
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        assert len(kafka_metrics_bridge._threads) == 2
+        assert kafka_metrics_bridge._threads == first_threads
+
+        kafka_metrics_bridge.stop()
+
+    def test_is_healthy_returns_false_when_no_threads(self):
+        from pipelines.processing import kafka_metrics_bridge
+
+        kafka_metrics_bridge.stop()  # ensure clean
+        assert kafka_metrics_bridge.is_healthy() is False
+
+    def test_is_healthy_returns_true_when_threads_alive(self, tmp_path):
+        from pipelines.processing import kafka_metrics_bridge
+
+        yaml_file = tmp_path / "rules.yaml"
+        yaml_file.write_text(
+            "- rule_id: VEL-001\n  family: velocity\n  enabled: true\n"
+        )
+
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        assert kafka_metrics_bridge.is_healthy() is True
+        kafka_metrics_bridge.stop()
+
+    def test_stop_clears_threads(self, tmp_path):
+        from pipelines.processing import kafka_metrics_bridge
+
+        yaml_file = tmp_path / "rules.yaml"
+        yaml_file.write_text(
+            "- rule_id: VEL-001\n  family: velocity\n  enabled: true\n"
+        )
+
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        assert len(kafka_metrics_bridge._threads) == 2
+        kafka_metrics_bridge.stop()
+        assert len(kafka_metrics_bridge._threads) == 0

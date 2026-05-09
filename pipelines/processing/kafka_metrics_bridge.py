@@ -30,11 +30,22 @@ import logging
 import threading
 from pathlib import Path
 
+from pipelines.scoring.safe_metrics import SafeCounter
+
 logger = logging.getLogger(__name__)
 
-_ALERT_SCHEMA_PATH = Path(__file__).parent.parent / "scoring" / "schemas" / "fraud-alert-v1.avsc"
+_ALERT_SCHEMA_PATH = (
+    Path(__file__).parent.parent / "scoring" / "schemas" / "fraud-alert-v1.avsc"
+)
 
 _stop_event = threading.Event()
+_threads: list[threading.Thread] = []
+
+bridge_thread_died_total = SafeCounter(
+    "bridge_thread_died_total",
+    "Number of times a metrics-bridge thread died unexpectedly",
+    ["thread_name"],
+)
 
 
 def _build_rule_family_map(rules_yaml_path: str) -> dict[str, str]:
@@ -60,59 +71,77 @@ def _alerts_consumer_thread(
     rule_family_map: dict[str, str],
 ) -> None:
     """Consume txn.fraud.alerts and increment rule_flags_total in the main process."""
-    try:
-        import fastavro
-        from confluent_kafka import Consumer
+    try:  # noqa: PLR1702
+        try:
+            import fastavro
+            from confluent_kafka import Consumer
 
-        from pipelines.scoring.metrics import rule_flags_total
-    except ImportError as exc:
-        logger.warning("Metrics bridge (alerts): missing dependency, skipping: %s", exc)
-        return
+            from pipelines.scoring.metrics import rule_flags_total
+        except ImportError as exc:
+            logger.warning(
+                "Metrics bridge (alerts): missing dependency, skipping: %s", exc
+            )
+            return
 
-    parsed_schema = fastavro.parse_schema(json.loads(_ALERT_SCHEMA_PATH.read_text()))
+        parsed_schema = fastavro.parse_schema(
+            json.loads(_ALERT_SCHEMA_PATH.read_text())
+        )
 
-    consumer = Consumer(
-        {
-            "bootstrap.servers": brokers,
-            "group.id": "flink-metrics-bridge-alerts",
-            "auto.offset.reset": "latest",
-            "enable.auto.commit": "true",
-        }
-    )
-    consumer.subscribe([topic])
-    logger.info("Metrics bridge (alerts): subscribed to %s", topic)
+        consumer = Consumer(
+            {
+                "bootstrap.servers": brokers,
+                "group.id": "flink-metrics-bridge-alerts",
+                "auto.offset.reset": "latest",
+                "enable.auto.commit": "true",
+            }
+        )
+        consumer.subscribe([topic])
+        logger.info("Metrics bridge (alerts): subscribed to %s", topic)
 
-    try:
-        while not _stop_event.is_set():
-            msg = consumer.poll(timeout=1.0)
-            if msg is None:
-                continue
-            if msg.error():
-                logger.debug("Metrics bridge (alerts) kafka error: %s", msg.error())
-                continue
-            try:
-                record = next(fastavro.reader(io.BytesIO(msg.value()), parsed_schema))
-                # Avro enum comes back as a string with the symbol value (lowercase).
-                severity = record.get("severity", "low")
-                if not isinstance(severity, str):
-                    severity = str(severity)
-                severity = severity.lower()
-                for rule_id in record.get("matched_rule_names", []):
-                    if rule_id.endswith(":shadow"):
-                        continue
-                    family = rule_family_map.get(rule_id, "unknown")
-                    rule_flags_total.labels(
-                        rule_id=rule_id,
-                        rule_family=family,
-                        severity=severity,
-                    ).inc()
-            except StopIteration:
-                pass
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Metrics bridge (alerts): could not decode message: %s", exc)
-    finally:
-        consumer.close()
-        logger.info("Metrics bridge (alerts): consumer closed")
+        try:
+            while not _stop_event.is_set():
+                msg = consumer.poll(timeout=1.0)
+                if msg is None:
+                    continue
+                if msg.error():
+                    logger.debug(
+                        "Metrics bridge (alerts) kafka error: %s", msg.error()
+                    )
+                    continue
+                try:
+                    record = next(
+                        fastavro.reader(io.BytesIO(msg.value()), parsed_schema)
+                    )
+                    severity = record.get("severity", "low")
+                    if not isinstance(severity, str):
+                        severity = str(severity)
+                    severity = severity.lower()
+                    for rule_id in record.get("matched_rule_names", []):
+                        if rule_id.endswith(":shadow"):
+                            continue
+                        family = rule_family_map.get(rule_id, "unknown")
+                        rule_flags_total.labels(
+                            rule_id=rule_id,
+                            rule_family=family,
+                            severity=severity,
+                        ).inc()
+                except StopIteration:
+                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "Metrics bridge (alerts): could not decode message: %s",
+                        exc,
+                    )
+        finally:
+            consumer.close()
+            logger.info("Metrics bridge (alerts): consumer closed")
+    except Exception:  # noqa: BLE001
+        logger.error(
+            "Metrics bridge (alerts): thread died unexpectedly", exc_info=True
+        )
+        bridge_thread_died_total.labels(
+            thread_name="metrics-bridge-alerts"
+        ).inc()
 
 
 def _enriched_consumer_thread(
@@ -125,44 +154,59 @@ def _enriched_consumer_thread(
     Every enriched record triggers evaluation of all enabled rules, so each
     message results in one increment per rule in the rule family map.
     """
-    if not rule_family_map:
-        logger.warning("Metrics bridge (enriched): no rules loaded — skipping thread")
-        return
-
     try:
-        from confluent_kafka import Consumer
+        if not rule_family_map:
+            logger.warning(
+                "Metrics bridge (enriched): no rules loaded — skipping thread"
+            )
+            return
 
-        from pipelines.scoring.metrics import rule_evaluations_total
-    except ImportError as exc:
-        logger.warning("Metrics bridge (enriched): missing dependency, skipping: %s", exc)
-        return
+        try:
+            from confluent_kafka import Consumer
 
-    consumer = Consumer(
-        {
-            "bootstrap.servers": brokers,
-            "group.id": "flink-metrics-bridge-enriched",
-            "auto.offset.reset": "latest",
-            "enable.auto.commit": "true",
-        }
-    )
-    consumer.subscribe([topic])
-    logger.info("Metrics bridge (enriched): subscribed to %s", topic)
+            from pipelines.scoring.metrics import rule_evaluations_total
+        except ImportError as exc:
+            logger.warning(
+                "Metrics bridge (enriched): missing dependency, skipping: %s",
+                exc,
+            )
+            return
 
-    rule_items = list(rule_family_map.items())  # snapshot for tight inner loop
+        consumer = Consumer(
+            {
+                "bootstrap.servers": brokers,
+                "group.id": "flink-metrics-bridge-enriched",
+                "auto.offset.reset": "latest",
+                "enable.auto.commit": "true",
+            }
+        )
+        consumer.subscribe([topic])
+        logger.info("Metrics bridge (enriched): subscribed to %s", topic)
 
-    try:
-        while not _stop_event.is_set():
-            msg = consumer.poll(timeout=1.0)
-            if msg is None:
-                continue
-            if msg.error():
-                continue
-            # Each enriched record represents one evaluation pass over all rules.
-            for rule_id, family in rule_items:
-                rule_evaluations_total.labels(rule_id=rule_id, rule_family=family).inc()
-    finally:
-        consumer.close()
-        logger.info("Metrics bridge (enriched): consumer closed")
+        rule_items = list(rule_family_map.items())
+
+        try:
+            while not _stop_event.is_set():
+                msg = consumer.poll(timeout=1.0)
+                if msg is None:
+                    continue
+                if msg.error():
+                    continue
+                for rule_id, family in rule_items:
+                    rule_evaluations_total.labels(
+                        rule_id=rule_id, rule_family=family
+                    ).inc()
+        finally:
+            consumer.close()
+            logger.info("Metrics bridge (enriched): consumer closed")
+    except Exception:  # noqa: BLE001
+        logger.error(
+            "Metrics bridge (enriched): thread died unexpectedly",
+            exc_info=True,
+        )
+        bridge_thread_died_total.labels(
+            thread_name="metrics-bridge-enriched"
+        ).inc()
 
 
 def start(
@@ -177,23 +221,34 @@ def start(
     already running (stop_event is clear).  Designed to be called from the
     main process after the Prometheus HTTP server is up.
     """
+    global _threads  # noqa: PLW0603
+
+    # Idempotency: skip if threads are already alive.
+    if any(t.is_alive() for t in _threads):
+        logger.debug("Kafka metrics bridge already running — skipping start()")
+        return
+
     rule_family_map = _build_rule_family_map(rules_yaml_path)
 
     _stop_event.clear()
 
-    threading.Thread(
+    t_alerts = threading.Thread(
         target=_alerts_consumer_thread,
         args=(brokers, alerts_topic, rule_family_map),
         daemon=True,
         name="metrics-bridge-alerts",
-    ).start()
+    )
+    t_alerts.start()
 
-    threading.Thread(
+    t_enriched = threading.Thread(
         target=_enriched_consumer_thread,
         args=(brokers, enriched_topic, rule_family_map),
         daemon=True,
         name="metrics-bridge-enriched",
-    ).start()
+    )
+    t_enriched.start()
+
+    _threads = [t_alerts, t_enriched]
 
     logger.info(
         "Kafka metrics bridge started (alerts=%s, enriched=%s, rules=%s)",
@@ -205,4 +260,20 @@ def start(
 
 def stop() -> None:
     """Signal bridge threads to stop gracefully (next poll timeout cycle)."""
+    global _threads  # noqa: PLW0603
     _stop_event.set()
+    for t in _threads:
+        t.join(timeout=5.0)
+    _threads = []
+
+
+def is_healthy() -> bool:
+    """Return True only if all bridge threads are alive."""
+    if not _threads:
+        return False
+    return all(t.is_alive() for t in _threads)
+
+
+def is_running() -> bool:
+    """Return True if bridge threads exist and are all alive."""
+    return len(_threads) > 0 and all(t.is_alive() for t in _threads)
