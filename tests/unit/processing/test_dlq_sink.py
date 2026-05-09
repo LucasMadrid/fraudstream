@@ -1,126 +1,121 @@
-"""Unit tests for DLQ sink serialisation and record construction (T013)."""
+"""Unit tests for DLQKafkaProducer."""
 
-import struct
+from __future__ import annotations
 
-from pipelines.processing.shared.dlq_sink import (
-    build_dlq_record,
-    serialise_dlq_record,
-)
+from unittest.mock import MagicMock, patch
+
+from pipelines.processing.shared.dlq_sink import DLQKafkaProducer
 
 
-class TestBuildDlqRecord:
-    def test_required_fields_present(self):
-        record = build_dlq_record(
-            source_topic="txn.api",
-            source_partition=0,
-            source_offset=42,
-            original_payload_bytes=b"\x00\x00\x00\x00\x01abc",
-            error_type="SCHEMA_VALIDATION_ERROR",
-            error_message="Invalid magic byte",
+class TestDLQKafkaProducerInit:
+    """Test DLQKafkaProducer construction."""
+
+    def test_stores_config(self):
+        p = DLQKafkaProducer("localhost:9092", "txn.processing.dlq")
+        assert p._bootstrap_servers == "localhost:9092"
+        assert p._dlq_topic == "txn.processing.dlq"
+        assert p._producer is None
+
+
+class TestDLQKafkaProducerOpen:
+    """Test DLQKafkaProducer.open()."""
+
+    @patch("pipelines.processing.shared.dlq_sink.DLQKafkaProducer.open")
+    def test_open_creates_producer(self, mock_open):
+        p = DLQKafkaProducer("localhost:9092", "dlq")
+        p.open()
+        mock_open.assert_called_once()
+
+    def test_open_sets_producer_via_mock(self):
+        p = DLQKafkaProducer("localhost:9092", "dlq")
+        mock_producer = MagicMock()
+        with patch("confluent_kafka.Producer", return_value=mock_producer):
+            p.open()
+        assert p._producer is mock_producer
+
+
+class TestDLQKafkaProducerProduce:
+    """Test DLQKafkaProducer.produce()."""
+
+    def test_produce_before_open_logs_error(self, caplog):
+        import logging
+
+        caplog.set_level(
+            logging.ERROR,
+            logger="pipelines.processing.shared.dlq_sink",
         )
-        assert record["source_topic"] == "txn.api"
-        assert record["source_partition"] == 0
-        assert record["source_offset"] == 42
-        assert record["error_type"] == "SCHEMA_VALIDATION_ERROR"
-        assert record["error_message"] == "Invalid magic byte"
-        assert record["transaction_id"] is None
-        assert record["watermark_at_rejection"] is None
-        assert record["event_time_at_rejection"] is None
+        p = DLQKafkaProducer("localhost:9092", "dlq")
+        p.produce(b"data")
+        assert any("called before open()" in r.message for r in caplog.records)
 
-    def test_optional_fields_populated_when_provided(self):
-        record = build_dlq_record(
-            source_topic="txn.api",
-            source_partition=1,
-            source_offset=99,
-            original_payload_bytes=b"raw",
-            error_type="LATE_EVENT_BEYOND_ALLOWED_LATENESS",
-            error_message="10s past watermark",
-            transaction_id="txn-abc-123",
-            watermark_at_rejection=1_700_000_000_000,
-            event_time_at_rejection=1_699_999_990_000,
-            subtask_index=2,
-        )
-        assert record["transaction_id"] == "txn-abc-123"
-        assert record["watermark_at_rejection"] == 1_700_000_000_000
-        assert record["event_time_at_rejection"] == 1_699_999_990_000
-        assert record["processor_subtask_index"] == 2
+    def test_produce_delegates_to_kafka_producer(self):
+        p = DLQKafkaProducer("localhost:9092", "my.dlq")
+        mock_prod = MagicMock()
+        p._producer = mock_prod
 
-    def test_dlq_id_is_uuid_v4(self):
-        import re
-
-        record = build_dlq_record(
-            source_topic="txn.api",
-            source_partition=0,
-            source_offset=0,
-            original_payload_bytes=b"",
-            error_type="ENRICHMENT_EXCEPTION",
-            error_message="unexpected",
-        )
-        uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        assert re.match(uuid_pattern, record["dlq_id"]), f"Not a UUID v4: {record['dlq_id']}"
-
-    def test_failed_at_is_recent_epoch_ms(self):
-        import time
-
-        before = int(time.time() * 1000)
-        record = build_dlq_record(
-            source_topic="txn.api",
-            source_partition=0,
-            source_offset=0,
-            original_payload_bytes=b"",
-            error_type="SCHEMA_VALIDATION_ERROR",
-            error_message="test",
-        )
-        after = int(time.time() * 1000)
-        assert before <= record["failed_at"] <= after
-
-
-class TestSerialiseDlqRecord:
-    def _make_record(self):
-        return build_dlq_record(
-            source_topic="txn.api",
-            source_partition=0,
-            source_offset=1,
-            original_payload_bytes=b"\x00\x00\x00\x00\x01payload",
-            error_type="SCHEMA_VALIDATION_ERROR",
-            error_message="test error",
+        p.produce(b"\x00\x01\x02", key="txn-123")
+        mock_prod.produce.assert_called_once_with(
+            "my.dlq",
+            value=b"\x00\x01\x02",
+            key=b"txn-123",
         )
 
-    def test_confluent_wire_format_magic_byte(self):
-        record = self._make_record()
-        serialised = serialise_dlq_record(record, schema_id=7)
-        assert serialised[0:1] == b"\x00", "First byte must be Confluent magic 0x00"
+    def test_produce_with_none_key(self):
+        p = DLQKafkaProducer("localhost:9092", "my.dlq")
+        mock_prod = MagicMock()
+        p._producer = mock_prod
 
-    def test_schema_id_encoded_big_endian(self):
-        record = self._make_record()
-        schema_id = 42
-        serialised = serialise_dlq_record(record, schema_id=schema_id)
-        decoded_id = struct.unpack(">I", serialised[1:5])[0]
-        assert decoded_id == schema_id
+        p.produce(b"data", key=None)
+        mock_prod.produce.assert_called_once_with("my.dlq", value=b"data", key=None)
 
-    def test_original_payload_bytes_preserved(self):
-        """original_payload_bytes must be round-trippable through Avro serialisation."""
-        import io
+    def test_produce_swallows_exception(self, caplog):
+        import logging
 
-        import fastavro
+        caplog.set_level(
+            logging.ERROR,
+            logger="pipelines.processing.shared.dlq_sink",
+        )
+        p = DLQKafkaProducer("localhost:9092", "my.dlq")
+        mock_prod = MagicMock()
+        mock_prod.produce.side_effect = RuntimeError("boom")
+        p._producer = mock_prod
 
-        from pipelines.processing.shared.dlq_sink import _PARSED_DLQ_SCHEMA
+        # Should NOT raise
+        p.produce(b"data")
+        assert any("Failed to produce" in r.message for r in caplog.records)
 
-        record = self._make_record()
-        serialised = serialise_dlq_record(record, schema_id=0)
-        avro_payload = serialised[5:]  # strip 5-byte Confluent header
-        decoded = fastavro.schemaless_reader(io.BytesIO(avro_payload), _PARSED_DLQ_SCHEMA)
-        assert decoded["original_payload_bytes"] == record["original_payload_bytes"]
 
-    def test_schema_validation_error_type_roundtrip(self):
-        """SCHEMA_VALIDATION_ERROR error_type survives Avro round-trip."""
-        import io
+class TestDLQKafkaProducerFlush:
+    """Test DLQKafkaProducer.flush()."""
 
-        import fastavro
+    def test_flush_delegates(self):
+        p = DLQKafkaProducer("localhost:9092", "dlq")
+        mock_prod = MagicMock()
+        p._producer = mock_prod
 
-        from pipelines.processing.shared.dlq_sink import _PARSED_DLQ_SCHEMA
+        p.flush(timeout=3.0)
+        mock_prod.flush.assert_called_once_with(3.0)
 
-        record = self._make_record()
-        serialised = serialise_dlq_record(record, schema_id=0)
-        decoded = fastavro.schemaless_reader(io.BytesIO(serialised[5:]), _PARSED_DLQ_SCHEMA)
-        assert decoded["error_type"] == "SCHEMA_VALIDATION_ERROR"
+    def test_flush_noop_when_not_open(self):
+        p = DLQKafkaProducer("localhost:9092", "dlq")
+        # Should not raise
+        p.flush()
+
+
+class TestDLQKafkaProducerClose:
+    """Test DLQKafkaProducer.close()."""
+
+    def test_close_flushes_and_nulls(self):
+        p = DLQKafkaProducer("localhost:9092", "dlq")
+        mock_prod = MagicMock()
+        p._producer = mock_prod
+
+        p.close()
+        mock_prod.flush.assert_called_once_with(timeout=10.0)
+        assert p._producer is None
+
+    def test_close_noop_when_not_open(self):
+        p = DLQKafkaProducer("localhost:9092", "dlq")
+        # Should not raise
+        p.close()
+        assert p._producer is None

@@ -75,33 +75,38 @@ class TestBuildRuleFamilyMap:
 # ---------------------------------------------------------------------------
 class TestStartStop:
     def test_start_spawns_two_daemon_threads(self, tmp_path):
+        from unittest.mock import patch as mock_patch
+
         from pipelines.processing import kafka_metrics_bridge
 
         yaml_file = tmp_path / "rules.yaml"
         yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
 
-        # Use idents (unique per thread), not names — prior tests may have left
-        # threads named "metrics-bridge-*" alive from TestJobMain.main() calls.
-        before_idents = {t.ident for t in threading.enumerate()}
-
-        kafka_metrics_bridge.start(
-            brokers="localhost:9092",
-            alerts_topic="txn.fraud.alerts",
-            enriched_topic="txn.enriched",
-            rules_yaml_path=str(yaml_file),
+        # Mock Consumer so threads don't die from no Kafka in CI
+        mock_consumer = MagicMock()
+        mock_consumer.poll.side_effect = lambda timeout: (
+            kafka_metrics_bridge._stop_event.wait(timeout) or None
         )
 
-        new_threads = [t for t in threading.enumerate() if t.ident not in before_idents]
-        new_names = {t.name for t in new_threads}
-        assert "metrics-bridge-alerts" in new_names
-        assert "metrics-bridge-enriched" in new_names
+        with mock_patch("confluent_kafka.Consumer", return_value=mock_consumer):
+            kafka_metrics_bridge.start(
+                brokers="localhost:9092",
+                alerts_topic="txn.fraud.alerts",
+                enriched_topic="txn.enriched",
+                rules_yaml_path=str(yaml_file),
+            )
 
-        # Verify daemon flag on the newly spawned threads only
-        for t in new_threads:
-            if t.name in ("metrics-bridge-alerts", "metrics-bridge-enriched"):
+            # _threads is set synchronously in start(), no race condition
+            assert len(kafka_metrics_bridge._threads) == 2
+            thread_names = {t.name for t in kafka_metrics_bridge._threads}
+            assert "metrics-bridge-alerts" in thread_names
+            assert "metrics-bridge-enriched" in thread_names
+
+            # Verify daemon flag
+            for t in kafka_metrics_bridge._threads:
                 assert t.daemon is True
 
-        kafka_metrics_bridge.stop()
+            kafka_metrics_bridge.stop()
 
     def test_stop_sets_stop_event(self):
         from pipelines.processing import kafka_metrics_bridge
@@ -360,3 +365,75 @@ class TestEnrichedConsumerThread:
             _enriched_consumer_thread("localhost:9092", "txn.enriched", {"VEL-001": "velocity"})
 
         mock_consumer.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Thread safety — idempotency, health check, stop
+# ---------------------------------------------------------------------------
+class TestThreadSafety:
+    def test_start_is_idempotent(self, tmp_path):
+        """Calling start() twice must NOT spawn duplicate threads."""
+        from pipelines.processing import kafka_metrics_bridge
+
+        yaml_file = tmp_path / "rules.yaml"
+        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
+
+        kafka_metrics_bridge.stop()  # clean slate
+
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        first_threads = list(kafka_metrics_bridge._threads)
+        assert len(first_threads) == 2
+
+        # Second call should be no-op
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        assert len(kafka_metrics_bridge._threads) == 2
+        assert kafka_metrics_bridge._threads == first_threads
+
+        kafka_metrics_bridge.stop()
+
+    def test_is_healthy_returns_false_when_no_threads(self):
+        from pipelines.processing import kafka_metrics_bridge
+
+        kafka_metrics_bridge.stop()  # ensure clean
+        assert kafka_metrics_bridge.is_healthy() is False
+
+    def test_is_healthy_returns_true_when_threads_alive(self, tmp_path):
+        from pipelines.processing import kafka_metrics_bridge
+
+        yaml_file = tmp_path / "rules.yaml"
+        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
+
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        assert kafka_metrics_bridge.is_healthy() is True
+        kafka_metrics_bridge.stop()
+
+    def test_stop_clears_threads(self, tmp_path):
+        from pipelines.processing import kafka_metrics_bridge
+
+        yaml_file = tmp_path / "rules.yaml"
+        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
+
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
+        )
+        assert len(kafka_metrics_bridge._threads) == 2
+        kafka_metrics_bridge.stop()
+        assert len(kafka_metrics_bridge._threads) == 0
