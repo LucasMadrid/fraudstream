@@ -164,7 +164,6 @@ class TestAlertPostgresSinkReconnection:
         With autocommit, each statement is its own transaction, so no
         explicit rollback is needed. We verify autocommit is set.
         """
-        from unittest.mock import patch
 
         from pipelines.scoring.config import ScoringConfig
         from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
@@ -230,7 +229,7 @@ class TestAlertPostgresSinkReconnection:
 
     def test_persist_retries_once_on_connection_error(self):
         """persist() retries exactly once on OperationalError."""
-        from unittest.mock import call, patch
+        from unittest.mock import patch
 
         import psycopg2
 

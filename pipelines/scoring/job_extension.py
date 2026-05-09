@@ -8,6 +8,27 @@ from pipelines.scoring.types import FraudDecision
 
 logger = logging.getLogger(__name__)
 
+# Zero-value feature defaults used when feature enrichment fails.
+_FEATURE_ZERO_DEFAULTS: dict = {
+    "vel_count_1m": 0,
+    "vel_amount_1m": 0.0,
+    "vel_count_5m": 0,
+    "vel_amount_5m": 0.0,
+    "vel_count_1h": 0,
+    "vel_amount_1h": 0.0,
+    "vel_count_24h": 0,
+    "vel_amount_24h": 0.0,
+    "geo_country": "",
+    "geo_city": "",
+    "geo_network_class": "UNKNOWN",
+    "geo_confidence": 0.0,
+    "device_first_seen": 0,
+    "device_txn_count": 0,
+    "device_known_fraud": False,
+    "prev_geo_country": None,
+    "prev_txn_time_ms": None,
+}
+
 
 class _FeatureEnrichmentFunction:
     """Flink MapFunction that fetches feature vectors per transaction.
@@ -94,7 +115,22 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
             self._fn.open(runtime_context)
 
         def map(self, value):
-            return self._fn.map(value)
+            try:
+                return self._fn.map(value)
+            except Exception as exc:  # noqa: BLE001
+                from pipelines.scoring.metrics import feature_store_fallback_total
+
+                logger.warning(
+                    "Feature enrichment failed for txn=%s — using zero defaults: %s",
+                    value.get("transaction_id", "") if isinstance(value, dict) else "",
+                    exc,
+                )
+                feature_store_fallback_total.labels(
+                    reason="enrichment_error",
+                ).inc()
+                fallback = dict(value) if isinstance(value, dict) else {}
+                fallback.update(_FEATURE_ZERO_DEFAULTS)
+                return fallback
 
         def close(self):
             self._fn.close()
@@ -105,23 +141,45 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
 
     def _evaluate(txn: dict):
         """Evaluate transaction and return tuple of (optional alert, decision)."""
-        result = evaluator.dispatch(txn)
+        try:
+            result = evaluator.dispatch(txn)
 
-        # Create FraudAlert only for suspicious transactions
-        alert = None
-        if result.determination == "suspicious":
-            alert = FraudAlert(
-                transaction_id=txn.get("transaction_id", ""),
-                account_id=txn.get("account_id", ""),
-                matched_rule_names=result.matched_rules,
-                severity=result.highest_severity or "low",
-                evaluation_timestamp=result.evaluation_timestamp,
+            # Create FraudAlert only for suspicious transactions
+            alert = None
+            if result.determination == "suspicious":
+                alert = FraudAlert(
+                    transaction_id=txn.get("transaction_id", ""),
+                    account_id=txn.get("account_id", ""),
+                    matched_rule_names=result.matched_rules,
+                    severity=result.highest_severity or "low",
+                    evaluation_timestamp=result.evaluation_timestamp,
+                )
+
+            # Create FraudDecision for ALL transactions
+            decision = _build_fraud_decision(txn, result)
+
+            return (alert, decision)
+        except Exception as exc:  # noqa: BLE001
+            from pipelines.scoring.metrics import evaluation_errors_total
+
+            txn_id = txn.get("transaction_id", "") if isinstance(txn, dict) else ""
+            logger.error(
+                "Rule evaluation failed for txn=%s — returning ALLOW: %s",
+                txn_id,
+                exc,
             )
-
-        # Create FraudDecision for ALL transactions
-        decision = _build_fraud_decision(txn, result)
-
-        return (alert, decision)
+            evaluation_errors_total.inc()
+            default_decision = FraudDecision(
+                transaction_id=txn_id,
+                decision="ALLOW",
+                fraud_score=0.0,
+                rule_triggers=[],
+                model_version="rule-only",
+                decision_time_ms=0,
+                latency_ms=0.0,
+                schema_version="1",
+            )
+            return (None, default_decision)
 
     # Evaluate every transaction and split into alerts and decisions
     eval_stream = enriched_stream.map(_evaluate, output_type=None)
@@ -158,8 +216,17 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
 
         def map(self, value):
             # Kafka emit is the primary alert path (FR-010: back-pressure must
-            # propagate upstream). Let failures raise — do not catch here.
-            self._kafka_sink.emit(value)
+            # propagate upstream). KafkaException/BufferError must raise.
+            # ValueError and serialization errors are bad-record issues — log
+            # and continue so one malformed alert cannot crash the pipeline.
+            try:
+                self._kafka_sink.emit(value)
+            except (ValueError, TypeError, AttributeError) as exc:
+                logger.error(
+                    "Kafka alert serialisation failed for txn=%s — skipping emit: %s",
+                    getattr(value, "transaction_id", ""),
+                    exc,
+                )
             # PostgreSQL is best-effort durability; a transient DB failure must
             # not stall the pipeline or drop the Kafka alert already emitted.
             try:

@@ -88,6 +88,12 @@ iceberg_decisions_catalog_unavailable_total = SafeCounter(
     "Total number of Iceberg catalog connection errors for fraud decisions",
 )
 
+evaluation_errors_total = SafeCounter(
+    "evaluation_errors_total",
+    "Rule evaluation errors caught",
+    [],
+)
+
 
 def record_shadow_trigger(rule_id: str) -> None:
     """Increment the shadow trigger counter for a shadow rule that fired."""
