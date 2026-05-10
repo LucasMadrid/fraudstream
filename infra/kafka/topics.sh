@@ -62,6 +62,16 @@ docker exec broker kafka-topics \
   --config retention.ms=2592000000 \
   --config cleanup.policy=delete
 
+docker exec broker kafka-topics \
+  --bootstrap-server "${BOOTSTRAP}" \
+  --create --if-not-exists \
+  --topic txn.shadow.decisions \
+  --partitions 4 \
+  --replication-factor "${REPLICATION_FACTOR}" \
+  --config retention.ms=604800000 \
+  --config cleanup.policy=delete \
+  --config compression.type=lz4
+
 echo "Topics created:"
 docker exec broker kafka-topics --bootstrap-server "${BOOTSTRAP}" --list | grep "txn\."
 
@@ -108,5 +118,9 @@ _register_schema \
 _register_schema \
   "txn.fraud.alerts.dlq-value" \
   "${REPO_ROOT}/pipelines/scoring/schemas/fraud-alert-dlq-v1.avsc"
+
+_register_schema \
+  "txn.shadow.decisions-value" \
+  "${REPO_ROOT}/pipelines/scoring/schemas/shadow-decision-v1.avsc"
 
 echo "Schema registration complete."

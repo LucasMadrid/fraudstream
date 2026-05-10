@@ -1,0 +1,23 @@
+{
+  "type": "record",
+  "name": "ShadowDecision",
+  "namespace": "com.fraudstream.scoring",
+  "doc": "Shadow scoring decision record for comparing shadow vs production rules. Written to txn.shadow.decisions for every transaction evaluated with shadow rules.",
+  "fields": [
+    {"name": "transaction_id", "type": "string", "doc": "Unique transaction identifier"},
+    {"name": "account_id", "type": "string", "doc": "Account owner identifier (masked)"},
+    {"name": "production_decision", "type": {"type": "enum", "name": "ProductionDecision", "symbols": ["ALLOW", "FLAG", "BLOCK"]}, "doc": "Final production decision"},
+    {"name": "production_fraud_score", "type": "double", "doc": "Production fraud score in [0.0, 1.0]"},
+    {"name": "production_rule_triggers", "type": {"type": "array", "items": "string"}, "default": [], "doc": "Active rules that triggered"},
+    {"name": "shadow_determination", "type": {"type": "enum", "name": "ShadowDetermination", "symbols": ["clean", "suspicious"]}, "doc": "Shadow rules determination"},
+    {"name": "shadow_fraud_score", "type": "double", "doc": "Shadow fraud score in [0.0, 1.0]"},
+    {"name": "shadow_rule_triggers", "type": {"type": "array", "items": "string"}, "default": [], "doc": "Shadow rules that triggered"},
+    {"name": "model_version", "type": "string", "doc": "ML model version used for scoring"},
+    {"name": "rule_set_version", "type": "string", "doc": "Active rule set version"},
+    {"name": "shadow_rule_set_version", "type": "string", "doc": "Shadow rule set version"},
+    {"name": "decision_time_ms", "type": "long", "doc": "Evaluation timestamp (epoch ms)"},
+    {"name": "score_delta", "type": "double", "doc": "Difference between shadow and production scores (shadow - production)"},
+    {"name": "decision_mismatch", "type": "boolean", "doc": "True if production and shadow decisions differ"},
+    {"name": "schema_version", "type": "string", "default": "1", "doc": "Schema version for evolution"}
+  ]
+}

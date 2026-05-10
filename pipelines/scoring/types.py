@@ -169,3 +169,6 @@ class FraudDecision:
     decision_time_ms: int
     latency_ms: float
     schema_version: str = "1"
+    shadow_determination: Literal["clean", "suspicious"] | None = None
+    shadow_fraud_score: float | None = None
+    shadow_rule_triggers: list[str] | None = None

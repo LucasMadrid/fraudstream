@@ -26,8 +26,15 @@ import sys
 
 from pipelines.processing.config import ProcessorConfig
 from pipelines.processing.logging_config import configure_logging
+from pipelines.shared.tracing import init_tracer_provider
 
 logger = logging.getLogger(__name__)
+
+# Initialize tracer provider for processing service
+init_tracer_provider(
+    service_name="fraudstream-processing",
+    sample_rate=float(os.environ.get("OTEL_SAMPLE_RATE", "1.0")),
+)
 
 
 # ---------------------------------------------------------------------------

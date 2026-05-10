@@ -97,6 +97,37 @@ def get_fraud_decisions_schema():
             pa.field("decision_time_ms", pa.timestamp("us"), nullable=False),
             pa.field("latency_ms", pa.float64(), nullable=False),
             pa.field("schema_version", pa.string(), nullable=False),
+            pa.field("shadow_determination", pa.string(), nullable=True),
+            pa.field("shadow_fraud_score", pa.float64(), nullable=True),
+            pa.field("shadow_rule_triggers", pa.list_(pa.string()), nullable=True),
+        ]
+    )
+
+
+def get_shadow_decisions_schema():
+    """Return the PyArrow schema for shadow_decisions table.
+
+    Captures both production and shadow rule outcomes for comparison.
+    """
+    import pyarrow as pa
+
+    return pa.schema(
+        [
+            pa.field("transaction_id", pa.string(), nullable=False),
+            pa.field("account_id", pa.string(), nullable=False),
+            pa.field("production_decision", pa.string(), nullable=False),
+            pa.field("production_fraud_score", pa.float64(), nullable=False),
+            pa.field("production_rule_triggers", pa.list_(pa.string()), nullable=False),
+            pa.field("shadow_determination", pa.string(), nullable=False),
+            pa.field("shadow_fraud_score", pa.float64(), nullable=False),
+            pa.field("shadow_rule_triggers", pa.list_(pa.string()), nullable=False),
+            pa.field("model_version", pa.string(), nullable=False),
+            pa.field("rule_set_version", pa.string(), nullable=False),
+            pa.field("shadow_rule_set_version", pa.string(), nullable=False),
+            pa.field("decision_time_ms", pa.timestamp("us"), nullable=False),
+            pa.field("score_delta", pa.float64(), nullable=False),
+            pa.field("decision_mismatch", pa.bool_(), nullable=False),
+            pa.field("schema_version", pa.string(), nullable=False),
         ]
     )
 
@@ -189,12 +220,17 @@ def main():
         decisions_schema = get_fraud_decisions_schema()
         create_table(catalog, "default.fraud_decisions", decisions_schema)
 
+        # Create shadow_decisions table
+        shadow_schema = get_shadow_decisions_schema()
+        create_table(catalog, "default.shadow_decisions", shadow_schema)
+
         logger.info("=" * 60)
         logger.info("Iceberg table initialization complete!")
         logger.info("=" * 60)
         logger.info("Tables created:")
         logger.info("  - default.enriched_transactions")
         logger.info("  - default.fraud_decisions")
+        logger.info("  - default.shadow_decisions")
         logger.info("=" * 60)
         return 0
 

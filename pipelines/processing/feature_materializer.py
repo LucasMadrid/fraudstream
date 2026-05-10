@@ -13,8 +13,11 @@ import time
 import pyarrow as pa
 
 from pipelines.shared.feature_schema import FEATURE_GROUPS, ColumnSpec
+from pipelines.shared.tracing import add_event, get_tracer, record_exception
 
 logger = logging.getLogger(__name__)
+
+tracer = get_tracer(__name__)
 
 
 class FeatureMaterializer:
@@ -33,15 +36,32 @@ class FeatureMaterializer:
 
     def materialize(self, records: list[dict]) -> None:
         """Push velocity, geo, and device feature groups for a batch of enriched records."""
-        if not records:
-            return
+        with tracer.start_as_current_span("feature_materializer.materialize") as span:
+            if not records:
+                span.set_attribute("record_count", 0)
+                return
 
-        event_timestamps = [int(r.get("event_time", 0)) for r in records]
+            span.set_attribute("record_count", len(records))
+            event_timestamps = [int(r.get("event_time", 0)) for r in records]
 
-        for source_name, columns in FEATURE_GROUPS:
-            self._push_feature_group(source_name, columns, records, event_timestamps)
+            for source_name, columns in FEATURE_GROUPS:
+                with tracer.start_as_current_span(
+                    f"push_feature_group.{source_name}"
+                ) as group_span:
+                    group_span.set_attribute("feature_group", source_name)
+                    group_span.set_attribute("column_count", len(columns))
+                    try:
+                        self._push_feature_group(source_name, columns, records, event_timestamps)
+                        group_span.set_attribute("success", True)
+                    except Exception as exc:
+                        group_span.set_attribute("success", False)
+                        record_exception(exc)
+                        logger.error(
+                            "Failed to push %s to Feast: %s", source_name, exc, exc_info=True
+                        )
 
-        self._update_staleness_gauge()
+            self._update_staleness_gauge()
+            add_event("feature_materialization_complete", {"record_count": len(records)})
 
     # ------------------------------------------------------------------
     # Private helpers

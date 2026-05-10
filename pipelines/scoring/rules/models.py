@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import re
-from enum import IntEnum, StrEnum
+from enum import Enum, IntEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
-class RuleFamily(StrEnum):
+class RuleFamily(str, Enum):
     """Fraud rule families."""
 
     velocity = "velocity"
@@ -17,7 +17,7 @@ class RuleFamily(StrEnum):
     new_device = "new_device"
 
 
-class RuleMode(StrEnum):
+class RuleMode(str, Enum):
     """Rule execution mode."""
 
     active = "active"
