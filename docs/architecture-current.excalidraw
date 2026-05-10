@@ -1,0 +1,136 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "hermes-agent",
+  "elements": [
+    {"type": "rectangle", "id": "bg_zone_ingestion", "x": 20, "y": 20, "width": 180, "height": 800, "strokeColor": "transparent", "backgroundColor": "#dbe4ff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": []},
+    {"type": "text", "id": "label_ingestion", "x": 30, "y": 40, "width": 160, "height": 25, "text": "Ingestion", "fontSize": 18, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "rectangle", "id": "bg_zone_processing", "x": 220, "y": 20, "width": 320, "height": 800, "strokeColor": "transparent", "backgroundColor": "#d0bfff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": []},
+    {"type": "text", "id": "label_processing", "x": 230, "y": 40, "width": 300, "height": 25, "text": "Processing Layer (Flink)", "fontSize": 18, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "rectangle", "id": "bg_zone_scoring", "x": 560, "y": 20, "width": 280, "height": 800, "strokeColor": "transparent", "backgroundColor": "#e5dbff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": []},
+    {"type": "text", "id": "label_scoring", "x": 570, "y": 40, "width": 260, "height": 25, "text": "Scoring Layer", "fontSize": 18, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "rectangle", "id": "bg_zone_storage", "x": 860, "y": 20, "width": 200, "height": 400, "strokeColor": "transparent", "backgroundColor": "#c3fae8", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": []},
+    {"type": "text", "id": "label_storage", "x": 870, "y": 40, "width": 180, "height": 25, "text": "Data Stores", "fontSize": 18, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "rectangle", "id": "bg_zone_analytics", "x": 860, "y": 440, "width": 200, "height": 380, "strokeColor": "transparent", "backgroundColor": "#eebefa", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": []},
+    {"type": "text", "id": "label_analytics", "x": 870, "y": 460, "width": 180, "height": 25, "text": "Analytics Layer", "fontSize": 18, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "rectangle", "id": "bg_zone_obs", "x": 1080, "y": 20, "width": 160, "height": 800, "strokeColor": "transparent", "backgroundColor": "#fff3bf", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": []},
+    {"type": "text", "id": "label_obs", "x": 1090, "y": 40, "width": 140, "height": 25, "text": "Observability", "fontSize": 18, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "rectangle", "id": "topic_txn_api", "x": 40, "y": 100, "width": 140, "height": 60, "strokeColor": "#2563eb", "backgroundColor": "#a5d8ff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_topic_txn_api", "type": "text"}]},
+    {"type": "text", "id": "t_topic_txn_api", "x": 45, "y": 118, "width": 130, "height": 25, "text": "txn.api", "fontSize": 16, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "topic_txn_api", "originalText": "txn.api", "autoResize": true},
+
+    {"type": "rectangle", "id": "op_dedup", "x": 260, "y": 100, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#d0bfff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_op_dedup", "type": "text"}]},
+    {"type": "text", "id": "t_op_dedup", "x": 265, "y": 113, "width": 130, "height": 25, "text": "DedupFilter", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "op_dedup", "originalText": "DedupFilter", "autoResize": true},
+
+    {"type": "rectangle", "id": "op_velocity", "x": 260, "y": 170, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#d0bfff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_op_velocity", "type": "text"}]},
+    {"type": "text", "id": "t_op_velocity", "x": 265, "y": 183, "width": 130, "height": 25, "text": "VelocityEnrich", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "op_velocity", "originalText": "VelocityEnrich", "autoResize": true},
+
+    {"type": "rectangle", "id": "op_geo", "x": 260, "y": 240, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#d0bfff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_op_geo", "type": "text"}]},
+    {"type": "text", "id": "t_op_geo", "x": 265, "y": 253, "width": 130, "height": 25, "text": "GeoEnrich", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "op_geo", "originalText": "GeoEnrich", "autoResize": true},
+
+    {"type": "rectangle", "id": "op_device", "x": 260, "y": 310, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#d0bfff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_op_device", "type": "text"}]},
+    {"type": "text", "id": "t_op_device", "x": 265, "y": 323, "width": 130, "height": 25, "text": "DeviceEnrich", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "op_device", "originalText": "DeviceEnrich", "autoResize": true},
+
+    {"type": "rectangle", "id": "op_assembler", "x": 260, "y": 380, "width": 140, "height": 60, "strokeColor": "#7c3aed", "backgroundColor": "#ffc9c9", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_op_assembler", "type": "text"}]},
+    {"type": "text", "id": "t_op_assembler", "x": 265, "y": 390, "width": 130, "height": 40, "text": "EnrichedRec\nAssembler", "fontSize": 12, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "op_assembler", "originalText": "EnrichedRec\nAssembler", "autoResize": true},
+
+    {"type": "text", "id": "pain_point_iceberg", "x": 265, "y": 445, "width": 130, "height": 35, "text": "Pain Point:\nIceberg in hot path", "fontSize": 10, "fontFamily": 1, "strokeColor": "#dc2626", "textAlign": "center", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "rectangle", "id": "topic_enriched", "x": 40, "y": 380, "width": 140, "height": 60, "strokeColor": "#2563eb", "backgroundColor": "#a5d8ff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_topic_enriched", "type": "text"}]},
+    {"type": "text", "id": "t_topic_enriched", "x": 45, "y": 398, "width": 130, "height": 25, "text": "txn.enriched", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "topic_enriched", "originalText": "txn.enriched", "autoResize": true},
+
+    {"type": "rectangle", "id": "scoring_feature", "x": 580, "y": 140, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#e5dbff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_scoring_feature", "type": "text"}]},
+    {"type": "text", "id": "t_scoring_feature", "x": 585, "y": 153, "width": 130, "height": 25, "text": "FeatureClient", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "scoring_feature", "originalText": "FeatureClient", "autoResize": true},
+
+    {"type": "rectangle", "id": "scoring_rules", "x": 580, "y": 210, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#e5dbff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_scoring_rules", "type": "text"}]},
+    {"type": "text", "id": "t_scoring_rules", "x": 585, "y": 223, "width": 130, "height": 25, "text": "RuleEvaluator", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "scoring_rules", "originalText": "RuleEvaluator", "autoResize": true},
+
+    {"type": "rectangle", "id": "scoring_circuit", "x": 580, "y": 280, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#e5dbff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_scoring_circuit", "type": "text"}]},
+    {"type": "text", "id": "t_scoring_circuit", "x": 585, "y": 293, "width": 130, "height": 25, "text": "CircuitBreaker", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "scoring_circuit", "originalText": "CircuitBreaker", "autoResize": true},
+
+    {"type": "rectangle", "id": "scoring_kafka", "x": 580, "y": 360, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#e5dbff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_scoring_kafka", "type": "text"}]},
+    {"type": "text", "id": "t_scoring_kafka", "x": 585, "y": 373, "width": 130, "height": 25, "text": "AlertKafkaSink", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "scoring_kafka", "originalText": "AlertKafkaSink", "autoResize": true},
+
+    {"type": "rectangle", "id": "scoring_pg", "x": 580, "y": 430, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#e5dbff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_scoring_pg", "type": "text"}]},
+    {"type": "text", "id": "t_scoring_pg", "x": 585, "y": 443, "width": 130, "height": 25, "text": "AlertPgSink", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "scoring_pg", "originalText": "AlertPgSink", "autoResize": true},
+
+    {"type": "rectangle", "id": "scoring_iceberg", "x": 580, "y": 500, "width": 140, "height": 50, "strokeColor": "#7c3aed", "backgroundColor": "#e5dbff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_scoring_iceberg", "type": "text"}]},
+    {"type": "text", "id": "t_scoring_iceberg", "x": 585, "y": 513, "width": 130, "height": 25, "text": "IcebergSink", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "scoring_iceberg", "originalText": "IcebergSink", "autoResize": true},
+
+    {"type": "rectangle", "id": "store_pg", "x": 880, "y": 100, "width": 160, "height": 50, "strokeColor": "#0d9488", "backgroundColor": "#c3fae8", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_store_pg", "type": "text"}]},
+    {"type": "text", "id": "t_store_pg", "x": 885, "y": 113, "width": 150, "height": 25, "text": "PostgreSQL", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "store_pg", "originalText": "PostgreSQL", "autoResize": true},
+
+    {"type": "rectangle", "id": "store_redis", "x": 880, "y": 170, "width": 160, "height": 50, "strokeColor": "#0d9488", "backgroundColor": "#c3fae8", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_store_redis", "type": "text"}]},
+    {"type": "text", "id": "t_store_redis", "x": 885, "y": 183, "width": 150, "height": 25, "text": "Redis/Feast", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "store_redis", "originalText": "Redis/Feast", "autoResize": true},
+
+    {"type": "rectangle", "id": "store_iceberg", "x": 880, "y": 240, "width": 160, "height": 50, "strokeColor": "#0d9488", "backgroundColor": "#c3fae8", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_store_iceberg", "type": "text"}]},
+    {"type": "text", "id": "t_store_iceberg", "x": 885, "y": 253, "width": 150, "height": 25, "text": "Iceberg/MinIO", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "store_iceberg", "originalText": "Iceberg/MinIO", "autoResize": true},
+
+    {"type": "rectangle", "id": "store_minio", "x": 880, "y": 310, "width": 160, "height": 50, "strokeColor": "#0d9488", "backgroundColor": "#c3fae8", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_store_minio", "type": "text"}]},
+    {"type": "text", "id": "t_store_minio", "x": 885, "y": 323, "width": 150, "height": 25, "text": "MinIO (S3)", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "store_minio", "originalText": "MinIO (S3)", "autoResize": true},
+
+    {"type": "rectangle", "id": "analytics_streamlit", "x": 880, "y": 520, "width": 160, "height": 50, "strokeColor": "#db2777", "backgroundColor": "#eebefa", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_analytics_streamlit", "type": "text"}]},
+    {"type": "text", "id": "t_analytics_streamlit", "x": 885, "y": 533, "width": 150, "height": 25, "text": "Streamlit", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "analytics_streamlit", "originalText": "Streamlit", "autoResize": true},
+
+    {"type": "rectangle", "id": "analytics_duckdb", "x": 880, "y": 590, "width": 160, "height": 50, "strokeColor": "#db2777", "backgroundColor": "#eebefa", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_analytics_duckdb", "type": "text"}]},
+    {"type": "text", "id": "t_analytics_duckdb", "x": 885, "y": 603, "width": 150, "height": 25, "text": "DuckDB", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "analytics_duckdb", "originalText": "DuckDB", "autoResize": true},
+
+    {"type": "rectangle", "id": "analytics_consumer", "x": 880, "y": 660, "width": 160, "height": 50, "strokeColor": "#db2777", "backgroundColor": "#eebefa", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_analytics_consumer", "type": "text"}]},
+    {"type": "text", "id": "t_analytics_consumer", "x": 885, "y": 673, "width": 150, "height": 25, "text": "KafkaConsumer", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "analytics_consumer", "originalText": "KafkaConsumer", "autoResize": true},
+
+    {"type": "rectangle", "id": "obs_prom", "x": 1100, "y": 100, "width": 120, "height": 50, "strokeColor": "#ca8a04", "backgroundColor": "#fff3bf", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_obs_prom", "type": "text"}]},
+    {"type": "text", "id": "t_obs_prom", "x": 1105, "y": 113, "width": 110, "height": 25, "text": "Prometheus", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "obs_prom", "originalText": "Prometheus", "autoResize": true},
+
+    {"type": "rectangle", "id": "obs_grafana", "x": 1100, "y": 170, "width": 120, "height": 50, "strokeColor": "#ca8a04", "backgroundColor": "#fff3bf", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_obs_grafana", "type": "text"}]},
+    {"type": "text", "id": "t_obs_grafana", "x": 1105, "y": 183, "width": 110, "height": 25, "text": "Grafana", "fontSize": 14, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "obs_grafana", "originalText": "Grafana", "autoResize": true},
+
+    {"type": "rectangle", "id": "dlq_processing", "x": 260, "y": 560, "width": 140, "height": 50, "strokeColor": "#dc2626", "backgroundColor": "#ffc9c9", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_dlq_processing", "type": "text"}]},
+    {"type": "text", "id": "t_dlq_processing", "x": 265, "y": 573, "width": 130, "height": 25, "text": "DLQ: processing", "fontSize": 12, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "dlq_processing", "originalText": "DLQ: processing", "autoResize": true},
+
+    {"type": "rectangle", "id": "dlq_alerts", "x": 580, "y": 580, "width": 140, "height": 50, "strokeColor": "#dc2626", "backgroundColor": "#ffc9c9", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_dlq_alerts", "type": "text"}]},
+    {"type": "text", "id": "t_dlq_alerts", "x": 585, "y": 593, "width": 130, "height": 25, "text": "DLQ: alerts", "fontSize": 12, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "dlq_alerts", "originalText": "DLQ: alerts", "autoResize": true},
+
+    {"type": "rectangle", "id": "topic_fraud_alerts", "x": 420, "y": 360, "width": 140, "height": 50, "strokeColor": "#2563eb", "backgroundColor": "#a5d8ff", "fillStyle": "solid", "roundness": {"type": 3}, "boundElements": [{"id": "t_topic_fraud_alerts", "type": "text"}]},
+    {"type": "text", "id": "t_topic_fraud_alerts", "x": 425, "y": 373, "width": 130, "height": 25, "text": "txn.fraud.alerts", "fontSize": 12, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "middle", "containerId": "topic_fraud_alerts", "originalText": "txn.fraud.alerts", "autoResize": true},
+
+    {"type": "arrow", "id": "a1", "x": 180, "y": 125, "width": 80, "height": 0, "points": [[0,0],[80,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a2", "x": 400, "y": 125, "width": 180, "height": 0, "points": [[0,0],[180,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a3", "x": 330, "y": 150, "width": 0, "height": 20, "points": [[0,0],[0,20]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a4", "x": 330, "y": 220, "width": 0, "height": 20, "points": [[0,0],[0,20]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a5", "x": 330, "y": 290, "width": 0, "height": 20, "points": [[0,0],[0,20]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a6", "x": 400, "y": 410, "width": 180, "height": 0, "points": [[0,0],[180,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a7", "x": 720, "y": 165, "width": 160, "height": 0, "points": [[0,0],[160,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a8", "x": 720, "y": 235, "width": 160, "height": 0, "points": [[0,0],[160,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a9", "x": 720, "y": 305, "width": 160, "height": 0, "points": [[0,0],[160,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a10", "x": 720, "y": 385, "width": 160, "height": 0, "points": [[0,0],[160,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a11", "x": 720, "y": 455, "width": 160, "height": 0, "points": [[0,0],[160,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a12", "x": 720, "y": 525, "width": 160, "height": 0, "points": [[0,0],[160,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a13", "x": 650, "y": 260, "width": 0, "height": -50, "points": [[0,0],[0,-50]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a14", "x": 650, "y": 330, "width": 0, "height": -20, "points": [[0,0],[0,-20]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a15", "x": 650, "y": 360, "width": 0, "height": -30, "points": [[0,0],[0,-30]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a16", "x": 720, "y": 385, "width": 0, "height": 215, "points": [[0,0],[0,215]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a17", "x": 960, "y": 265, "width": 0, "height": 265, "points": [[0,0],[0,265]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a18", "x": 1100, "y": 545, "width": 0, "height": -415, "points": [[0,0],[0,-415]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a19", "x": 1040, "y": 125, "width": 60, "height": 0, "points": [[0,0],[60,0]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a20", "x": 1100, "y": 195, "width": 0, "height": -25, "points": [[0,0],[0,-25]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+    {"type": "arrow", "id": "a21", "x": 330, "y": 585, "width": 0, "height": -25, "points": [[0,0],[0,-25]], "endArrowhead": "arrow", "strokeColor": "#dc2626", "strokeStyle": "dashed"},
+    {"type": "arrow", "id": "a22", "x": 650, "y": 630, "width": 0, "height": -30, "points": [[0,0],[0,-30]], "endArrowhead": "arrow", "strokeColor": "#dc2626", "strokeStyle": "dashed"},
+    {"type": "arrow", "id": "a23", "x": 560, "y": 385, "width": 0, "height": 25, "points": [[0,0],[0,25]], "endArrowhead": "arrow", "strokeColor": "#1e1e1e"},
+
+    {"type": "text", "id": "title", "x": 20, "y": -20, "width": 500, "height": 35, "text": "FraudStream Architecture — Current State (As-Is)", "fontSize": 24, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "left", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "text", "id": "pain_point_rev_dep", "x": 320, "y": 650, "width": 200, "height": 40, "text": "Pain Point: Reverse dependency\nprocessing -> scoring/metrics", "fontSize": 10, "fontFamily": 1, "strokeColor": "#dc2626", "textAlign": "left", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "text", "id": "pain_point_drops", "x": 580, "y": 650, "width": 200, "height": 40, "text": "Pain Point: Silent record drops\nwhen Iceberg table=None", "fontSize": 10, "fontFamily": 1, "strokeColor": "#dc2626", "textAlign": "left", "verticalAlign": "top", "autoResize": true},
+
+    {"type": "text", "id": "kafka_consumer_group", "x": 880, "y": 720, "width": 160, "height": 30, "text": "Group: analytics.dashboard", "fontSize": 10, "fontFamily": 1, "strokeColor": "#1e1e1e", "textAlign": "center", "verticalAlign": "top", "autoResize": true}
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff"
+  }
+}

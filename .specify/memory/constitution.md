@@ -128,6 +128,14 @@ The online feature store is a first-class pipeline component — it is read on t
 - **Event timestamp on write**: Feature values MUST be pushed using the Kafka event timestamp as `event_timestamp` (not wall-clock time at flush) — enforcing FR-024 at the constitution level; the Feast push call MUST use `PushMode.ONLINE_AND_OFFLINE` with `event_timestamp_column='event_ts'`  
 - **Backend contract**: The online store backend MUST support sub-2ms point lookups by entity key (`account_id`) at expected peak load; Redis (Feast Redis online store) satisfies this contract locally and in cloud — any alternative requires a load test proving p99 < 2ms before production
 
+### XII. Component Lifecycle Management (NON-NEGOTIABLE)
+All stateful pipeline components implement explicit lifecycle guarantees ensuring deterministic resource initialization and cleanup. This principle addresses CHB-005 (close() guarantees) and applies to all custom operators, connectors, and managed resources.  
+- **Explicit initialization in `open()`**: Every stateful component MUST acquire all external resources (connections, thread pools, file handles, memory-mapped files, schema registry clients) in its `open()` method — never in the constructor. The constructor MUST only store configuration; network I/O and resource allocation in constructors is prohibited because it prevents dry-run validation and complicates testing  
+- **Deterministic cleanup in `close()`**: Every component MUST implement `close()` to release all resources acquired in `open()`. This includes: closing Kafka producers/consumers, shutting down thread pools with timeout, releasing file handles, and clearing caches. `close()` MUST be idempotent — multiple invocations must not raise errors or leak resources  
+- **Exception safety**: If `open()` fails partially, any resources already acquired MUST be released before the exception propagates — partial initialization leaks are prohibited. Components MUST use try-finally or context managers internally to ensure cleanup happens even when subsequent initialization steps fail  
+- **Ownership semantics**: Each resource has a single, explicit owner. Ownership transfer between components is prohibited — if two components share a connection, the owner creates it in `open()` and shares a reference; non-owning components MUST NOT close it. Parent components (e.g., Flink operators) own child resources; when a parent closes, all owned children close  
+- **Flink integration**: PyFlink `RichFunction` implementations MUST override `open(runtime_context)` for resource acquisition and `close()` for cleanup. The `RuntimeContext` is only available in `open()` — constructor-time access is a compile-time error. State descriptors MUST be declared as class attributes but initialized in `open()` via `get_state(state_descriptor)`  
+- **Verification requirement**: Every stateful component MUST have an integration test that: (a) initializes the component, (b) exercises its functionality, (c) closes it, (d) asserts no resource leaks via `psutil` or `lsof` inspection; tests that skip this lifecycle verification are blocked from merge
 
 ---
 
@@ -448,6 +456,13 @@ These decisions are architectural law — they represent choices made with full 
 **Tradeoff accepted**: DuckDB lives in Streamlit's process — a large scan can spike memory and slow the page. Mitigation: always push time-window predicates into the PyIceberg `scan()` call (partition pruning before Arrow materialisation), cap rolling windows at 30 days in Streamlit, and document that queries > 30 days belong in Trino. Trino remains the authoritative ad-hoc query tool for the data team.  
 **Scope**: Only the three Streamlit pages that previously called `trino-python-client` are affected — `2_fraud_rate.py`, `3_rule_triggers.py`, `4_model_compare.py`. The DLQ inspector and live feed pages are unaffected (no Trino calls). Trino stays in the stack for data team exploration and the analytics views defined in `analytics/views/`.
 
+### DD-12. Component lifecycle — explicit `open()` / `close()` contracts
+
+**Rejected**: Constructor resource allocation (prevents dry-run validation, complicates testing, resource leaks if init fails mid-way), implicit cleanup via `__del__` (non-deterministic in PyPy and CPython under cyclic references, not guaranteed to run), no cleanup at all (resource exhaustion under Flink restart loops).  
+**Chose**: Explicit lifecycle methods — `open()` acquires all resources; `close()` releases them; both are idempotent. Parent-child ownership chains ensure that when a Flink operator closes, all its owned resources close.  
+**Tradeoff accepted**: Boilerplate increases — every stateful component needs both methods. Mitigated by base classes (`RichFunction`, `ManagedResource`) that provide lifecycle scaffolding; child classes only implement `_do_open()` / `_do_close()`.  
+**Verification**: `tests/integration/test_lifecycle.py` uses `psutil` to assert file descriptor counts and thread counts return to baseline after component close; any resource leak fails CI.
+
 ---
 
 ## Non-Negotiables (Pre-Production Checklist)
@@ -494,4 +509,4 @@ All pull requests must include a checklist item confirming compliance with the r
 
 ---
 
-**Version**: 1.7.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-04-21
+**Version**: 1.8.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-05-10
