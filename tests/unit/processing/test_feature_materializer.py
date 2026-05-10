@@ -1,15 +1,23 @@
 """Unit tests for FeatureMaterializer.
 
 Store is injected as a mock so tests never touch the real Feast repo.
+Skipped if feast is not installed.
 """
 
 from __future__ import annotations
 
+import importlib.util
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pipelines.processing.feature_materializer import FeatureMaterializer
+# Check if feast is available
+HAS_FEAST = importlib.util.find_spec("feast") is not None
+
+pytestmark = pytest.mark.skipif(not HAS_FEAST, reason="feast not installed")
+
+if HAS_FEAST:
+    from pipelines.processing.feature_materializer import FeatureMaterializer
 
 
 @pytest.fixture()
