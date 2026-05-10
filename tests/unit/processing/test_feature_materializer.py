@@ -220,7 +220,7 @@ class TestPerGroupIsolation:
 
 class TestStalenessGauge:
     def test_updates_last_push_ms(self, materializer, store, sample_records):
-        before = materializer._last_push_ms
+        _ = materializer._last_push_ms  # noqa: F841
         with patch("feast.data_source.PushMode"):
             with patch(
                 "pipelines.processing.feature_materializer.FeatureMaterializer._update_staleness_gauge"

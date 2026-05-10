@@ -139,7 +139,7 @@ class TestAclEnforcement:
         topic_name = f"test-acl-{int(time.time())}"
 
         # Create topic as admin
-        result = subprocess.run(
+        subprocess.run(
             [
                 "kafka-topics",
                 "--bootstrap-server",
@@ -262,7 +262,7 @@ class TestAclEnforcement:
             consumer = Consumer(config)
             # This might not fail immediately on subscribe, but will fail on poll
             consumer.subscribe(["txn.test"])
-            msg = consumer.poll(timeout=1.0)
+            consumer.poll(timeout=1.0)
             # If we get here without exception, the ACL might not be enforced
             consumer.close()
         except Exception:
