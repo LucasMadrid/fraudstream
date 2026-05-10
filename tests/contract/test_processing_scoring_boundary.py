@@ -19,12 +19,8 @@ by the scoring layer at runtime via dependency injection.
 from __future__ import annotations
 
 import ast
-import sys
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
-
-import pytest
 
 from pipelines.shared.interfaces import (
     NoOpRuleMetricsPublisher,
@@ -48,7 +44,12 @@ class TestProcessingLayerIndependence:
         The processing layer should only use the shared interface contracts,
         never directly import scoring internals like metrics or safe_metrics.
         """
-        bridge_path = Path(__file__).parent.parent.parent / "pipelines" / "processing" / "kafka_metrics_bridge.py"
+        bridge_path = (
+            Path(__file__).parent.parent.parent
+            / "pipelines"
+            / "processing"
+            / "kafka_metrics_bridge.py"
+        )
         assert bridge_path.exists(), f"kafka_metrics_bridge.py not found at {bridge_path}"
 
         source = bridge_path.read_text()
@@ -75,7 +76,8 @@ class TestProcessingLayerIndependence:
 
         # Filter out allowed patterns
         disallowed_imports = [
-            imp for imp in scoring_imports
+            imp
+            for imp in scoring_imports
             if not any(imp.startswith(allowed) for allowed in allowed_patterns)
         ]
 
@@ -90,7 +92,12 @@ class TestProcessingLayerIndependence:
         The bridge should use get_metrics_provider and get_rule_metrics_publisher
         from pipelines.shared.interfaces.
         """
-        bridge_path = Path(__file__).parent.parent.parent / "pipelines" / "processing" / "kafka_metrics_bridge.py"
+        bridge_path = (
+            Path(__file__).parent.parent.parent
+            / "pipelines"
+            / "processing"
+            / "kafka_metrics_bridge.py"
+        )
         source = bridge_path.read_text()
         tree = ast.parse(source)
 
@@ -111,9 +118,7 @@ class TestProcessingLayerIndependence:
         # Verify key interface functions are imported
         required_names = {"get_metrics_provider", "get_rule_metrics_publisher"}
         missing = required_names - set(imported_names)
-        assert not missing, (
-            f"kafka_metrics_bridge.py missing required imports: {missing}"
-        )
+        assert not missing, f"kafka_metrics_bridge.py missing required imports: {missing}"
 
 
 # =============================================================================
@@ -177,7 +182,9 @@ class TestRuleMetricsPublisherInterface:
             mock_publisher.record_rule_flag.assert_called_once_with("rule-1", "velocity", "high")
         finally:
             # Restore original
-            set_rule_metrics_publisher(original if not isinstance(original, NoOpRuleMetricsPublisher) else None)
+            set_rule_metrics_publisher(
+                original if not isinstance(original, NoOpRuleMetricsPublisher) else None
+            )
 
     def test_get_rule_metrics_publisher_returns_noop_when_none_set(self):
         """TB-002-06: get_rule_metrics_publisher returns NoOpRuleMetricsPublisher by default."""
@@ -197,7 +204,9 @@ class TestRuleMetricsPublisherInterface:
             publisher.record_rule_flag("rule-1", "velocity", "high")
         finally:
             # Restore original
-            set_rule_metrics_publisher(original if not isinstance(original, NoOpRuleMetricsPublisher) else None)
+            set_rule_metrics_publisher(
+                original if not isinstance(original, NoOpRuleMetricsPublisher) else None
+            )
 
 
 # =============================================================================
@@ -236,8 +245,16 @@ class TestProcessingScoringIndependence:
             assert True
         finally:
             # Restore originals
-            set_metrics_provider(original_metrics_provider if not isinstance(original_metrics_provider, type(get_metrics_provider())) else None)
-            set_rule_metrics_publisher(original_rule_publisher if not isinstance(original_rule_publisher, NoOpRuleMetricsPublisher) else None)
+            set_metrics_provider(
+                original_metrics_provider
+                if not isinstance(original_metrics_provider, type(get_metrics_provider()))
+                else None
+            )
+            set_rule_metrics_publisher(
+                original_rule_publisher
+                if not isinstance(original_rule_publisher, NoOpRuleMetricsPublisher)
+                else None
+            )
 
     def test_kafka_metrics_bridge_uses_interface_not_concrete_metrics(self):
         """TB-002-08: Verify bridge uses interface methods, not direct metric access.
@@ -245,7 +262,12 @@ class TestProcessingScoringIndependence:
         The kafka_metrics_bridge.py should call record_rule_evaluation and
         record_rule_flag through the interface, not directly access scoring metrics.
         """
-        bridge_path = Path(__file__).parent.parent.parent / "pipelines" / "processing" / "kafka_metrics_bridge.py"
+        bridge_path = (
+            Path(__file__).parent.parent.parent
+            / "pipelines"
+            / "processing"
+            / "kafka_metrics_bridge.py"
+        )
         source = bridge_path.read_text()
 
         # Should use get_rule_metrics_publisher() to get the publisher
@@ -300,8 +322,9 @@ class TestSafeMetricsProviderInterface:
 
     def test_safe_metrics_provider_has_get_counter_method(self):
         """TB-002-10: SafeMetricsProvider must define get_counter method."""
-        from pipelines.shared.interfaces import SafeMetricsProvider
         import inspect
+
+        from pipelines.shared.interfaces import SafeMetricsProvider
 
         assert hasattr(SafeMetricsProvider, "get_counter")
 
@@ -363,9 +386,7 @@ class TestProcessingScoringContractIntegration:
 
             # Simulate alert processing
             rule_metrics.record_rule_flag(
-                rule_id="VEL-001",
-                rule_family="velocity",
-                severity="high"
+                rule_id="VEL-001", rule_family="velocity", severity="high"
             )
 
             # Verify calls were tracked

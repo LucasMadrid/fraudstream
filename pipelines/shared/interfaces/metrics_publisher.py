@@ -7,7 +7,7 @@ processing would need to import from scoring internals.
 
 Architecture:
     Processing Layer ──► Interface Contract ◄── Scoring Layer (implements)
-    
+
 The scoring layer provides concrete implementations at runtime via dependency
 injection, while the processing layer operates against the abstract interface.
 """
@@ -23,15 +23,15 @@ if TYPE_CHECKING:
 
 class MetricsPublisher(Protocol):
     """Protocol for publishing metrics with label support.
-    
-    This protocol abstracts metric operations without requiring a direct
-dependency on prometheus_client or scoring layer internals.
+
+        This protocol abstracts metric operations without requiring a direct
+    dependency on prometheus_client or scoring layer internals.
     """
-    
-    def labels(self, *args: Any, **kwargs: Any) -> "MetricsChild":
+
+    def labels(self, *args: Any, **kwargs: Any) -> MetricsChild:
         """Return a child metric with the given labels applied."""
         ...
-    
+
     def inc(self, amount: float = 1) -> None:
         """Increment the metric by the given amount."""
         ...
@@ -39,7 +39,7 @@ dependency on prometheus_client or scoring layer internals.
 
 class MetricsChild(Protocol):
     """Protocol for labeled metric child operations."""
-    
+
     def inc(self, amount: float = 1) -> None:
         """Increment the labeled metric by the given amount."""
         ...
@@ -47,11 +47,11 @@ class MetricsChild(Protocol):
 
 class SafeMetricsProvider(ABC):
     """Abstract base class for safe metric providers.
-    
+
     Implements safe fallbacks when prometheus_client is not available,
     ensuring processing layer metrics never crash the pipeline.
     """
-    
+
     @abstractmethod
     def get_counter(
         self,
@@ -60,36 +60,36 @@ class SafeMetricsProvider(ABC):
         labelnames: tuple[str, ...] = (),
     ) -> MetricsPublisher:
         """Get or create a counter metric.
-        
-        Args:
-name: Metric name
-documentation: Metric description
-labelnames: Tuple of label names for this metric
-            
-        Returns:
-A MetricsPublisher that supports labels and inc operations
+
+                Args:
+        name: Metric name
+        documentation: Metric description
+        labelnames: Tuple of label names for this metric
+
+                Returns:
+        A MetricsPublisher that supports labels and inc operations
         """
         ...
 
 
 class RuleMetricsPublisher(ABC):
     """Abstract interface for rule-related metrics publishing.
-    
+
     This is the primary contract (CHB-006) between processing and scoring.
     The processing layer uses this interface to publish rule evaluation
     and flag metrics without knowing the concrete metric implementations.
     """
-    
+
     @abstractmethod
     def record_rule_evaluation(self, rule_id: str, rule_family: str) -> None:
         """Record that a rule was evaluated.
-        
-        Args:
-rule_id: Unique identifier for the rule
-rule_family: Category/family the rule belongs to
+
+                Args:
+        rule_id: Unique identifier for the rule
+        rule_family: Category/family the rule belongs to
         """
         ...
-    
+
     @abstractmethod
     def record_rule_flag(
         self,
@@ -98,34 +98,34 @@ rule_family: Category/family the rule belongs to
         severity: str,
     ) -> None:
         """Record that a rule triggered a fraud flag.
-        
-        Args:
-rule_id: Unique identifier for the rule
-rule_family: Category/family the rule belongs to
-severity: Severity level of the triggered flag (low, medium, high)
+
+                Args:
+        rule_id: Unique identifier for the rule
+        rule_family: Category/family the rule belongs to
+        severity: Severity level of the triggered flag (low, medium, high)
         """
         ...
 
 
 class NoOpMetricsPublisher:
     """No-op implementation of MetricsPublisher for safe fallbacks.
-    
+
     Used when no concrete metrics provider is configured, ensuring
     processing layer continues to function without metrics.
     """
-    
-    def labels(self, *args: Any, **kwargs: Any) -> "NoOpMetricsPublisher":
+
+    def labels(self, *args: Any, **kwargs: Any) -> NoOpMetricsPublisher:
         """Return self - no-op labeled operations."""
         return self
-    
+
     def inc(self, amount: float = 1) -> None:
         """No-op increment."""
         pass
-    
+
     def set(self, value: float) -> None:
         """No-op set."""
         pass
-    
+
     def observe(self, amount: float) -> None:
         """No-op observe."""
         pass
@@ -133,14 +133,14 @@ class NoOpMetricsPublisher:
 
 class NoOpRuleMetricsPublisher(RuleMetricsPublisher):
     """No-op implementation of RuleMetricsPublisher.
-    
+
     Safe fallback when no rule metrics publisher is configured.
     """
-    
+
     def record_rule_evaluation(self, rule_id: str, rule_family: str) -> None:
         """No-op rule evaluation recording."""
         pass
-    
+
     def record_rule_flag(
         self,
         rule_id: str,
@@ -158,7 +158,7 @@ _rule_metrics_publisher: RuleMetricsPublisher | None = None
 
 def set_metrics_provider(provider: SafeMetricsProvider | None) -> None:
     """Set the global metrics provider.
-    
+
     Called by the scoring layer during initialization to provide
     concrete implementations to the processing layer.
     """
@@ -168,9 +168,9 @@ def set_metrics_provider(provider: SafeMetricsProvider | None) -> None:
 
 def get_metrics_provider() -> SafeMetricsProvider:
     """Get the current metrics provider.
-    
-    Returns:
-The configured provider, or a no-op implementation if none set
+
+        Returns:
+    The configured provider, or a no-op implementation if none set
     """
     if _metrics_provider is None:
         return _NoOpSafeMetricsProvider()
@@ -179,7 +179,7 @@ The configured provider, or a no-op implementation if none set
 
 def set_rule_metrics_publisher(publisher: RuleMetricsPublisher | None) -> None:
     """Set the global rule metrics publisher.
-    
+
     Called by the scoring layer during initialization.
     """
     global _rule_metrics_publisher
@@ -188,9 +188,9 @@ def set_rule_metrics_publisher(publisher: RuleMetricsPublisher | None) -> None:
 
 def get_rule_metrics_publisher() -> RuleMetricsPublisher:
     """Get the current rule metrics publisher.
-    
-    Returns:
-The configured publisher, or a no-op implementation if none set
+
+        Returns:
+    The configured publisher, or a no-op implementation if none set
     """
     if _rule_metrics_publisher is None:
         return NoOpRuleMetricsPublisher()
@@ -199,9 +199,9 @@ The configured publisher, or a no-op implementation if none set
 
 class _NoOpSafeMetricsProvider(SafeMetricsProvider):
     """Internal no-op provider returned when none is configured."""
-    
+
     _no_op = NoOpMetricsPublisher()
-    
+
     def get_counter(
         self,
         name: str,

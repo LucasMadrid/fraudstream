@@ -7,16 +7,16 @@ abstractions rather than concrete implementations.
 """
 
 from pipelines.shared.interfaces.metrics_publisher import (
-    MetricsPublisher,
     MetricsChild,
-    RuleMetricsPublisher,
-    SafeMetricsProvider,
+    MetricsPublisher,
     NoOpMetricsPublisher,
     NoOpRuleMetricsPublisher,
-    set_metrics_provider,
+    RuleMetricsPublisher,
+    SafeMetricsProvider,
     get_metrics_provider,
-    set_rule_metrics_publisher,
     get_rule_metrics_publisher,
+    set_metrics_provider,
+    set_rule_metrics_publisher,
 )
 
 __all__ = [

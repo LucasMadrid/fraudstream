@@ -1,5 +1,6 @@
-COMPOSE        := docker compose -f infra/docker-compose.yml
-PYTHON         := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3.11)
+COMPOSE          := docker compose -f infra/docker-compose.yml
+COMPOSE_SECURITY := docker compose -f infra/docker-compose.security.yml
+PYTHON           := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3.11)
 export DOCKER_BUILDKIT := 1
 
 ## MinIO credentials for PyIceberg S3FileIO (override for production)
@@ -13,11 +14,14 @@ KAFKA_CONNECTOR_URL     := https://repo1.maven.org/maven2/org/apache/flink/flink
 .PHONY: infra-up infra-down infra-clean infra-ps infra-logs \
         infra-restart infra-restart-grafana infra-restart-prometheus \
         topics bootstrap update-geoip download-jars \
-        flink-job flink-job-analytics \
+        flink-job flink-job-analytics iceberg-init \
         generate generate-suspicious simulate-alerts consume generate-dlq \
         analytics-counts analytics-join analytics-feast analytics-verify \
         analytics-up analytics-down \
-        install test test-unit test-integration
+        install test test-unit test-integration test-contract \
+        infra-security-up infra-security-down infra-security-ps infra-security-logs \
+        test-security test-performance \
+        lint lint-fix format format-fix help
 
 # ── Infrastructure lifecycle ──────────────────────────────────────────────
 
@@ -51,6 +55,38 @@ infra-restart-prometheus:
 	$(COMPOSE) up -d --force-recreate prometheus
 
 infra-restart: infra-restart-prometheus infra-restart-grafana
+
+# ── Security Test Environment (TB-001) ───────────────────────────────────
+## Starts the security test environment for P0-001 Kafka auth/encryption testing.
+## Includes SASL/SCRAM authentication and TLS encryption.
+## Requires: infra/docker-compose.security.yml
+
+infra-security-up:
+	@echo "Starting security test environment (Kafka SASL/TLS)..."
+	$(COMPOSE_SECURITY) up -d
+	@echo "Waiting for Kafka to be ready (this may take 30-60 seconds)..."
+	@sleep 10
+	$(COMPOSE_SECURITY) ps
+	@echo ""
+	@echo "Security environment ready:"
+	@echo "  PLAINTEXT:      localhost:9092"
+	@echo "  SASL_PLAINTEXT: localhost:9093 (SCRAM-SHA-256)"
+	@echo "  SASL_SSL:       localhost:9094 (SCRAM-SHA-256 + TLS)"
+	@echo "  Kafka UI:       http://localhost:8080"
+	@echo "  Schema Registry: http://localhost:8081"
+	@echo ""
+	@echo "Test users: admin/admin-secret, producer/producer-secret, consumer/consumer-secret"
+
+infra-security-down:
+	$(COMPOSE_SECURITY) down
+
+infra-security-ps:
+	$(COMPOSE_SECURITY) ps
+
+## SERVICE=broker-secure make infra-security-logs → tail a single service
+## make infra-security-logs → tail all services
+infra-security-logs:
+	$(COMPOSE_SECURITY) logs -f $(SERVICE)
 
 # ── Kafka topics + Schema Registry ───────────────────────────────────────
 
@@ -116,12 +152,18 @@ update-geoip:
 # ── Flink enrichment job ─────────────────────────────────────────────────
 
 flink-job:
-	RULES_YAML_PATH=rules/rules.yaml \
+	AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
+	AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
+	PYICEBERG_CATALOG__ICEBERG__URI=http://localhost:8181 \
+	PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
+	PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://localhost:9000 \
+	PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
+	RULES_YAML_PATH=$(PWD)/rules/rules.yaml \
 	$(PYTHON) -m pipelines.processing.job \
 	  --kafka-brokers localhost:9092 \
 	  --input-topic txn.api \
 	  --output-topic txn.enriched \
-	  --geoip-db-path infra/geoip/GeoLite2-City.mmdb
+	  --geoip-db-path $(PWD)/infra/geoip/GeoLite2-City.mmdb
 
 ## flink-job-analytics: run the enrichment job with Iceberg + Feast side-outputs enabled.
 ## Requires MinIO to be running (make infra-up). Writes to:
@@ -130,19 +172,34 @@ flink-job:
 ##   storage/feature_store/                 (Feast online store)
 ## Override credentials: MINIO_ACCESS_KEY=x MINIO_SECRET_KEY=y make flink-job-analytics
 
-flink-job-analytics:
+flink-job-analytics: iceberg-init
 	AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
 	AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
 	PYICEBERG_CATALOG__ICEBERG__URI=http://localhost:8181 \
 	PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
 	PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://localhost:9000 \
 	PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
-	RULES_YAML_PATH=rules/rules.yaml \
+	RULES_YAML_PATH=$(PWD)/rules/rules.yaml \
 	$(PYTHON) -m pipelines.processing.job \
 	  --kafka-brokers localhost:9092 \
 	  --input-topic txn.api \
 	  --output-topic txn.enriched \
-	  --geoip-db-path infra/geoip/GeoLite2-City.mmdb
+	  --geoip-db-path $(PWD)/infra/geoip/GeoLite2-City.mmdb
+
+## iceberg-init: Create Iceberg tables required by flink-job-analytics.
+## Creates default.enriched_transactions and default.fraud_decisions tables
+## using PyIceberg. Idempotent - safe to run multiple times.
+## Requires: iceberg-rest service running (make infra-up)
+
+iceberg-init:
+	@echo "Initializing Iceberg tables..."
+	@AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
+	AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
+	PYICEBERG_CATALOG__ICEBERG__URI=http://localhost:8181 \
+	PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
+	PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://localhost:9000 \
+	PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
+	$(PYTHON) scripts/iceberg_init.py
 
 # ── Analytics persistence verification ───────────────────────────────────
 ## analytics-counts: row counts for both Iceberg tables via DuckDB/PyIceberg
@@ -245,7 +302,113 @@ test-unit:
 test-integration:
 	pytest -m integration tests/integration/ -v
 
+## CHB-006: Interface contract tests - Avro/Iceberg schema alignment
 test-contract:
-	pytest tests/contract/ -v
+	@echo "Running CHB-006 interface contract tests..."
+	pytest tests/contract/ tests/contracts/ -v
 
 test: test-unit test-contract
+
+# ── Security Tests (TB-001) ────────────────────────────────────────────────
+## Run TB-001 Kafka SASL/SCRAM security tests
+## Requires: Security environment running (make infra-security-up)
+
+test-security:
+	@echo "Running TB-001 Kafka SASL/SCRAM security tests..."
+	@echo "Note: Requires security environment running on localhost:9093"
+	pytest tests/security/ -v -m "not skip"
+
+# ── Performance Tests (TB-003) ───────────────────────────────────────────────
+## Run TB-003 performance benchmarks
+## Run with: make test-performance
+## Run with slow tests: make test-performance SLOW=1
+
+test-performance:
+	@echo "Running TB-003 performance benchmarks..."
+	@if [ "$(SLOW)" = "1" ]; then \
+		echo "Including slow tests..."; \
+		pytest tests/performance/ -v; \
+	else \
+		echo "Skipping slow tests (run with SLOW=1 to include)"; \
+		pytest tests/performance/ -v -m "not slow"; \
+	fi
+
+# ── Code Quality (Lint/Format) ───────────────────────────────────────────────
+## Check code style with ruff (configured in pyproject.toml)
+
+lint:
+	ruff check .
+
+## Auto-fix code style issues where possible
+
+lint-fix:
+	ruff check --fix .
+
+## Check code formatting
+
+format:
+	ruff format --check .
+
+## Apply code formatting
+
+format-fix:
+	ruff format .
+
+# ── Help ───────────────────────────────────────────────────────────────────
+## Show this help message
+
+help:
+	@echo "FraudStream Makefile Targets"
+	@echo "============================="
+	@echo ""
+	@echo "Infrastructure:"
+	@echo "  make infra-up              Start core infrastructure"
+	@echo "  make infra-down            Stop core infrastructure"
+	@echo "  make infra-clean           Stop and remove volumes"
+	@echo "  make infra-logs            Tail logs (SERVICE=x for specific service)"
+	@echo "  make infra-security-up     Start security test environment (TB-001)"
+	@echo "  make infra-security-down   Stop security test environment"
+	@echo ""
+	@echo "Development:"
+	@echo "  make bootstrap             Full setup (download-jars + infra-up + topics)"
+	@echo "  make download-jars         Download Flink connector JARs"
+	@echo "  make update-geoip          Download MaxMind GeoIP database"
+	@echo "  make install               Install Python dependencies"
+	@echo ""
+	@echo "Flink Jobs:"
+	@echo "  make flink-job             Run enrichment job"
+	@echo "  make flink-job-analytics   Run enrichment job with Iceberg/Feast"
+	@echo "  make iceberg-init          Initialize Iceberg tables (run automatically)"
+	@echo ""
+	@echo "Data Generation:"
+	@echo "  make generate              Generate transactions (COUNT=0 for infinite)"
+	@echo "  make generate-suspicious   Generate only suspicious transactions"
+	@echo "  make simulate-alerts       Run alert storm simulation"
+	@echo "  make consume               Tail txn.enriched topic"
+	@echo ""
+	@echo "Analytics:"
+	@echo "  make analytics-up          Start Streamlit dashboard"
+	@echo "  make analytics-down        Stop Streamlit dashboard"
+	@echo "  make analytics-verify      Run all analytics checks"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test                  Run all tests (unit + contract)"
+	@echo "  make test-unit             Run unit tests only"
+	@echo "  make test-integration      Run integration tests"
+	@echo "  make test-contract         Run CHB-006 contract tests"
+	@echo "  make test-security         Run TB-001 security tests"
+	@echo "  make test-performance      Run TB-003 performance benchmarks"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make lint                  Check code style"
+	@echo "  make lint-fix              Auto-fix code style issues"
+	@echo "  make format                Check code formatting"
+	@echo "  make format-fix            Apply code formatting"
+	@echo ""
+	@echo "Environment Variables:"
+	@echo "  COUNT=100                  Number of records to generate"
+	@echo "  DELAY=500                  Delay between records (ms)"
+	@echo "  SUSPICIOUS_RATE=0.25       Rate of suspicious transactions"
+	@echo "  SERVICE=broker             Service name for logs"
+	@echo "  MINIO_ACCESS_KEY=x         MinIO credentials"
+	@echo "  MINIO_SECRET_KEY=x         MinIO credentials"
