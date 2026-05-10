@@ -8,11 +8,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 
-class ReplaySource(StrEnum):
+class ReplaySource(str, Enum):  # noqa: UP042
     """Source types for replay events."""
 
     iceberg = "iceberg"
@@ -20,7 +20,7 @@ class ReplaySource(StrEnum):
     dlq = "dlq"
 
 
-class ReplayStatus(StrEnum):
+class ReplayStatus(str, Enum):  # noqa: UP042
     """Status of a replay job."""
 
     pending = "pending"
