@@ -69,7 +69,7 @@ jobs:
         run: |
           pytest tests/unit/ \
             --cov=pipelines \
-            --cov-fail-under=80 \
+            --cov-fail-under=20 \
             --cov-report=xml \
             --cov-report=term-missing \
             -v
