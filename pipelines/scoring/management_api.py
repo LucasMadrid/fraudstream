@@ -24,7 +24,7 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 import yaml
@@ -541,7 +541,9 @@ async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
         try:
             raw_failure = getattr(cb, "_last_failure_time", None)
             if raw_failure is not None:
-                last_failure_time = datetime.fromtimestamp(float(raw_failure), tz=UTC).isoformat()
+                last_failure_time = datetime.fromtimestamp(
+                    float(raw_failure), tz=timezone.utc
+                ).isoformat()
         except (AttributeError, OSError, ValueError, TypeError) as e:
             logger.debug(
                 "Could not read _last_failure_time from circuit breaker: %s", type(e).__name__
@@ -552,8 +554,8 @@ async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
             reset_timeout = getattr(cb, "reset_timeout", None)
             if state == "open" and opened_at is not None and reset_timeout is not None:
                 probe_ts = float(opened_at) + float(reset_timeout)
-                if probe_ts > datetime.now(tz=UTC).timestamp():
-                    next_probe_time = datetime.fromtimestamp(probe_ts, tz=UTC).isoformat()
+                if probe_ts > datetime.now(tz=timezone.utc).timestamp():
+                    next_probe_time = datetime.fromtimestamp(probe_ts, tz=timezone.utc).isoformat()
         except (AttributeError, OSError, ValueError, TypeError) as e:
             logger.debug(
                 "Could not compute next_probe_time from circuit breaker: %s", type(e).__name__

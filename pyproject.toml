@@ -92,6 +92,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+ignore = ["UP017", "UP042"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["analytics", "pipelines"]
