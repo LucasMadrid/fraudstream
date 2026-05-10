@@ -1,8 +1,25 @@
+"""Tests for DuckDBQueryRunner - skipped if duckdb not installed."""
+
 from __future__ import annotations
 
-import pyarrow as pa
+import importlib.util
+from typing import TYPE_CHECKING
 
-from analytics.queries.duckdb_runner import DuckDBQueryRunner
+import pyarrow as pa
+import pytest
+
+if TYPE_CHECKING:
+    # Avoid importing duckdb at module level for type checking
+    pass
+
+# Check if duckdb is available without importing it
+HAS_DUCKDB = importlib.util.find_spec("duckdb") is not None
+
+pytestmark = pytest.mark.skipif(not HAS_DUCKDB, reason="duckdb not installed")
+
+# Import DuckDBQueryRunner only if duckdb is available
+if HAS_DUCKDB:
+    from analytics.queries.duckdb_runner import DuckDBQueryRunner
 
 _DECISIONS = pa.table(
     {
