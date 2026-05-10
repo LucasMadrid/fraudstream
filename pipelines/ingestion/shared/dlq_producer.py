@@ -1,4 +1,4 @@
-"""Dead-letter queue producer — separate Kafka Producer instance."""
+from __future__ import annotations
 
 import json
 import logging
@@ -8,12 +8,14 @@ import uuid
 
 from confluent_kafka import Producer
 
+from pipelines.shared.dlq_protocol import DLQSink
+
 logger = logging.getLogger(__name__)
 
 DLQ_TOPIC = "txn.api.dlq"
 
 
-class DLQProducer:
+class DLQProducer(DLQSink):
     """Writes DLQEnvelope messages to txn.api.dlq.
 
     Uses acks=1 and linger.ms=5 to avoid blocking on broker issues.
@@ -28,6 +30,26 @@ class DLQProducer:
                 "linger.ms": 5,
                 "client.id": f"dlq-producer-{socket.gethostname()}",
             }
+        )
+
+    def send(
+        self,
+        *,
+        source_topic: str,
+        original_payload: bytes,
+        error_type: str,
+        error_message: str,
+    ) -> None:
+        """Send a record to the DLQ (implements DLQSink protocol).
+
+        Delegates to send_to_dlq() after decoding bytes payload to string.
+        """
+        self.send_to_dlq(
+            source_topic=source_topic,
+            original_payload=original_payload.decode("utf-8", errors="replace"),
+            error_type=error_type,
+            error_message=error_message,
+            masking_applied=False,
         )
 
     def send_to_dlq(

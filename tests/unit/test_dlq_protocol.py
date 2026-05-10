@@ -137,6 +137,7 @@ class TestProcessingDLQSink:
 
         with patch("confluent_kafka.Producer"):
             sink = ProcessingDLQSink(bootstrap_servers="localhost:9092")
+            sink.open()
 
         with (
             patch("pipelines.processing.shared.dlq_sink.build_dlq_record") as mock_build,
@@ -168,6 +169,7 @@ class TestProcessingDLQSink:
         mock_kafka = MagicMock()
         with patch("confluent_kafka.Producer", return_value=mock_kafka):
             sink = ProcessingDLQSink(bootstrap_servers="localhost:9092", topic="my.dlq")
+            sink.open()
 
         with (
             patch("pipelines.processing.shared.dlq_sink.build_dlq_record", return_value={}),
@@ -191,6 +193,7 @@ class TestProcessingDLQSink:
 
         with patch("confluent_kafka.Producer"):
             sink = ProcessingDLQSink(bootstrap_servers="localhost:9092", schema_id=42)
+            sink.open()
 
         with (
             patch("pipelines.processing.shared.dlq_sink.build_dlq_record", return_value={}),

@@ -6,6 +6,7 @@ import logging
 
 from pipelines.scoring.config import ScoringConfig
 from pipelines.scoring.types import FraudAlert
+from pipelines.shared.alert_protocol import AlertSink
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ ON CONFLICT (transaction_id) DO NOTHING
 """
 
 
-class AlertPostgresSink:
+class AlertPostgresSink(AlertSink):
     """Persists FraudAlert records to the fraud_alerts PostgreSQL table.
 
     Uses ON CONFLICT (transaction_id) DO NOTHING for idempotency — safe to
@@ -31,6 +32,13 @@ class AlertPostgresSink:
     def __init__(self, config: ScoringConfig) -> None:
         self._config = config
         self._conn = None
+
+    def emit(self, alert: FraudAlert) -> None:
+        """Emit a fraud alert to PostgreSQL (implements AlertSink protocol).
+
+        Delegates to persist() for the actual database operation.
+        """
+        self.persist(alert)
 
     def open(self) -> None:
         """Open database connection."""

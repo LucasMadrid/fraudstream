@@ -191,8 +191,10 @@ class ShadowRuleEvaluator:
         evaluation_timestamp = int(time.time() * 1000)
 
         if determination == "clean":
-            for rule_id in shadow_matched:
-                record_shadow_fp(rule_id)
+            # Record shadow FP for all rules that didn't trigger (false positives)
+            for rule in self._rules:
+                if rule.rule_id not in shadow_matched:
+                    record_shadow_fp(rule.rule_id)
 
         return EvaluationResult(
             determination=determination,

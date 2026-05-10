@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from opentelemetry import propagate
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -39,7 +38,17 @@ def inject_trace_context(carrier: dict) -> list[tuple[str, bytes]]:
 
     Returns an empty list if no active trace (best-effort).
     """
-    propagate.inject(carrier)
+    # Use context API directly from opentelemetry.trace to get current context
+    from opentelemetry.trace import get_current_span
+
+    span = get_current_span()
+    if span.is_recording():
+        # Add traceparent manually if span is valid
+        span_context = span.get_span_context()
+        if span_context.trace_flags.sampled:
+            traceparent = f"00-{span_context.trace_id:032x}-{span_context.span_id:016x}-01"
+            carrier[TRACEPARENT_HEADER] = traceparent
+
     headers = []
     for key in (TRACEPARENT_HEADER, TRACESTATE_HEADER):
         if key in carrier:

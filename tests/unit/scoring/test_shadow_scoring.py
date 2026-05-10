@@ -424,11 +424,12 @@ class TestShadowDecisionKafkaSink:
     def test_close_flushes_and_releases_producer(self, mock_config):
         """close() should flush pending messages and release producer."""
         sink = ShadowDecisionKafkaSink(mock_config)
-        sink._producer = Mock()
+        mock_producer = Mock()
+        sink._producer = mock_producer
 
         sink.close()
 
-        sink._producer.flush.assert_called()
+        mock_producer.flush.assert_called()
         assert sink._producer is None
 
 
