@@ -23,7 +23,7 @@ from pipelines.shared.tracing import (
     record_exception,
     set_span_attribute,
     start_span,
-    trace,
+    trace_span,
 )
 
 
@@ -350,7 +350,7 @@ class TestTraceDecorator:
             mock_tracer.start_as_current_span.return_value.__exit__ = MagicMock(return_value=False)
             mock_get_tracer.return_value = mock_tracer
 
-            @trace(span_name="test_operation")
+            @trace_span(span_name="test_operation")
             def test_function():
                 return "result"
 
@@ -370,7 +370,7 @@ class TestTraceDecorator:
             mock_tracer.start_as_current_span.return_value.__exit__ = MagicMock(return_value=False)
             mock_get_tracer.return_value = mock_tracer
 
-            @trace(span_name="test_operation")
+            @trace_span(span_name="test_operation")
             def test_function():
                 raise ValueError("Test error")
 
