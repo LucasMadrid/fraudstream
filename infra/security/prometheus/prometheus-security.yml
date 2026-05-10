@@ -1,0 +1,40 @@
+# =============================================================================
+# Prometheus Configuration for Security Testing (TB-001)
+# =============================================================================
+# Monitors the secure Kafka environment with SASL/TLS authentication.
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Kafka broker metrics
+  - job_name: 'kafka-secure'
+    static_configs:
+      - targets: ['broker-secure:9090']
+        labels:
+          instance: 'broker-secure'
+          env: 'security-test'
+    metrics_path: /metrics
+
+  # Schema Registry metrics
+  - job_name: 'schema-registry-secure'
+    static_configs:
+      - targets: ['schema-registry-secure:8081']
+        labels:
+          instance: 'schema-registry-secure'
+          env: 'security-test'
+    metrics_path: /metrics

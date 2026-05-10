@@ -8,6 +8,16 @@ import textwrap
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from pipelines.scoring.interfaces import register_interface_implementations
+
+
+@pytest.fixture(autouse=True)
+def _register_interfaces():
+    """Auto-register interface implementations for all tests."""
+    register_interface_implementations()
+
 
 # ---------------------------------------------------------------------------
 # _build_rule_family_map

@@ -30,7 +30,7 @@ import logging
 import threading
 from pathlib import Path
 
-from pipelines.scoring.safe_metrics import SafeCounter
+from pipelines.shared.interfaces import get_metrics_provider, get_rule_metrics_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,12 @@ _ALERT_SCHEMA_PATH = Path(__file__).parent.parent / "scoring" / "schemas" / "fra
 _stop_event = threading.Event()
 _threads: list[threading.Thread] = []
 
-bridge_thread_died_total = SafeCounter(
+# Initialize metrics using the interface
+_metrics_provider = get_metrics_provider()
+bridge_thread_died_total = _metrics_provider.get_counter(
     "bridge_thread_died_total",
     "Number of times a metrics-bridge thread died unexpectedly",
-    ["thread_name"],
+    ("thread_name",),
 )
 
 
@@ -73,11 +75,12 @@ def _alerts_consumer_thread(
         try:
             import fastavro
             from confluent_kafka import Consumer
-
-            from pipelines.scoring.metrics import rule_flags_total
         except ImportError as exc:
             logger.warning("Metrics bridge (alerts): missing dependency, skipping: %s", exc)
             return
+
+        # Use the interface to publish rule metrics
+        rule_metrics = get_rule_metrics_publisher()
 
         parsed_schema = fastavro.parse_schema(json.loads(_ALERT_SCHEMA_PATH.read_text()))
 
@@ -110,11 +113,12 @@ def _alerts_consumer_thread(
                         if rule_id.endswith(":shadow"):
                             continue
                         family = rule_family_map.get(rule_id, "unknown")
-                        rule_flags_total.labels(
+                        # Use interface instead of direct metric access
+                        rule_metrics.record_rule_flag(
                             rule_id=rule_id,
                             rule_family=family,
                             severity=severity,
-                        ).inc()
+                        )
                 except StopIteration:
                     pass
                 except Exception as exc:  # noqa: BLE001
@@ -147,14 +151,15 @@ def _enriched_consumer_thread(
 
         try:
             from confluent_kafka import Consumer
-
-            from pipelines.scoring.metrics import rule_evaluations_total
         except ImportError as exc:
             logger.warning(
                 "Metrics bridge (enriched): missing dependency, skipping: %s",
                 exc,
             )
             return
+
+        # Use the interface to publish rule metrics
+        rule_metrics = get_rule_metrics_publisher()
 
         consumer = Consumer(
             {
@@ -177,7 +182,11 @@ def _enriched_consumer_thread(
                 if msg.error():
                     continue
                 for rule_id, family in rule_items:
-                    rule_evaluations_total.labels(rule_id=rule_id, rule_family=family).inc()
+                    # Use interface instead of direct metric access
+                    rule_metrics.record_rule_evaluation(
+                        rule_id=rule_id,
+                        rule_family=family,
+                    )
         finally:
             consumer.close()
             logger.info("Metrics bridge (enriched): consumer closed")

@@ -1,0 +1,208 @@
+# =============================================================================
+# TB-001: Security Test Environment for Kafka SASL/TLS
+# =============================================================================
+# Purpose: Test environment for validating P0-001 (Kafka auth/encryption)
+# Features:
+#   - SASL_PLAINTEXT listener (port 9093) - for testing SCRAM auth without TLS
+#   - SASL_SSL listener (port 9094) - for testing SCRAM auth with TLS
+#   - SCRAM-SHA-256 authentication mechanism
+#   - Self-signed TLS certificates for testing
+#   - Pre-configured test users with different ACL levels
+#
+# Usage:
+#   docker compose -f infra/docker-compose.security.yml up -d
+#
+# Test Users:
+#   - admin/admin-secret      - Full admin access
+#   - producer/producer-secret - Write access to txn.* topics
+#   - consumer/consumer-secret - Read access to txn.* topics
+#   - fraudapp/fraudapp-secret - Full access to fraud-related topics
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Kafka Broker with SASL/SCRAM + TLS
+  # ===========================================================================
+  broker-secure:
+    image: confluentinc/cp-kafka:7.9.6
+    hostname: broker-secure
+    container_name: broker-secure
+    ports:
+      - "9092:9092"    # PLAINTEXT (for migration/compatibility testing)
+      - "9093:9093"    # SASL_PLAINTEXT (SCRAM auth without TLS)
+      - "9094:9094"    # SASL_SSL (SCRAM auth with TLS)
+      - "9095:9095"    # Controller listener (internal)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker-secure:9095
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      
+      # Listener configuration
+      KAFKA_LISTENERS: PLAINTEXT://broker-secure:9092,SASL_PLAINTEXT://broker-secure:9093,SASL_SSL://broker-secure:9094,CONTROLLER://broker-secure:9095
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093,SASL_SSL://localhost:9094
+      
+      # Security protocol mapping
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL,CONTROLLER:PLAINTEXT
+      
+      # SASL configuration
+      KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-256
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+      
+      # Enable ACLs (KRaft-compatible authorizer) - allow all for testing
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_SUPER_USERS: User:admin
+      
+      # TLS/SSL Configuration
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka.server.keystore.jks
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_cred
+      KAFKA_SSL_KEY_CREDENTIALS: keystore_cred
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.server.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore_cred
+      KAFKA_SSL_CLIENT_AUTH: required
+      
+      # Replication settings for single-node cluster
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      
+      # Cluster ID for KRaft mode
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      
+      # JAAS configuration for inter-broker communication
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf"
+    
+    volumes:
+      # TLS certificates and keystores
+      - ./security/certs:/etc/kafka/secrets:ro
+      # JAAS configuration for SASL
+      - ./security/kafka_server_jaas.conf:/etc/kafka/kafka_server_jaas.conf:ro
+      # JAAS configuration for client connections
+      - ./security/kafka_client_jaas.conf:/etc/kafka/kafka_client_jaas.conf:ro
+    
+    networks: [fraudstream-secure]
+    
+    healthcheck:
+      test: 
+        - "CMD-SHELL"
+        - |
+          kafka-topics --bootstrap-server broker-secure:9093 \
+            --command-config /etc/kafka/client.properties \
+            --list 2>/dev/null || \
+          kafka-topics --bootstrap-server localhost:9092 --list
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ===========================================================================
+  # Schema Registry with SASL Authentication
+  # ===========================================================================
+  schema-registry-secure:
+    image: confluentinc/cp-schema-registry:7.9.6
+    hostname: schema-registry-secure
+    container_name: schema-registry-secure
+    depends_on:
+      broker-secure:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry-secure
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      
+      # Connect to SASL_PLAINTEXT listener
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: SASL_PLAINTEXT://broker-secure:9093
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_MECHANISM: SCRAM-SHA-256
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_JAAS_CONFIG: |
+        org.apache.kafka.common.security.scram.ScramLoginModule required
+        username="admin"
+        password="admin-secret";
+    
+    networks: [fraudstream-secure]
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ===========================================================================
+  # Kafka UI for visual management and testing
+  # ===========================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: fraudstream-secure
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker-secure:9093
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM: SCRAM-SHA-256
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG: |
+        org.apache.kafka.common.security.scram.ScramLoginModule required
+        username="admin"
+        password="admin-secret";
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry-secure:8081
+    depends_on:
+      - broker-secure
+      - schema-registry-secure
+    networks: [fraudstream-secure]
+
+  # ===========================================================================
+  # User provisioning service - creates SCRAM users on startup
+  # ===========================================================================
+  kafka-setup-secure:
+    image: confluentinc/cp-kafka:7.9.6
+    container_name: kafka-setup-secure
+    depends_on:
+      broker-secure:
+        condition: service_healthy
+    volumes:
+      - ./security/setup-users.sh:/setup-users.sh:ro
+      - ./security/client.properties:/tmp/client.properties:ro
+    command: >
+      bash -c "
+        echo 'Waiting for Kafka to be fully ready...' &&
+        sleep 10 &&
+        /setup-users.sh &&
+        echo 'User setup complete'
+      "
+    networks: [fraudstream-secure]
+    profiles: ["setup"]
+
+  # ===========================================================================
+  # Prometheus for metrics collection
+  # ===========================================================================
+  prometheus-secure:
+    image: prom/prometheus:v3.11.2
+    container_name: prometheus-secure
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./security/prometheus/prometheus-security.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-secure-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    networks: [fraudstream-secure]
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  prometheus-secure-data:
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  fraudstream-secure:
+    driver: bridge
+    name: fraudstream-secure
