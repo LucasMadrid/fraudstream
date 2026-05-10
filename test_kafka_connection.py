@@ -33,8 +33,11 @@ def test_kafka_connection():
     # Test 2: Try to import confluent-kafka
     print("\n2. Testing Kafka client library...")
     try:
-        from confluent_kafka import Consumer, Producer, admin
+        import importlib.util
 
+        spec = importlib.util.find_spec("confluent_kafka")
+        if spec is None:
+            raise ImportError("confluent_kafka not found")
         print("   ✓ confluent-kafka library is installed")
     except ImportError as e:
         print(f"   ✗ confluent-kafka library not available: {e}")
