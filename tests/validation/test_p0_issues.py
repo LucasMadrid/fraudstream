@@ -7,10 +7,9 @@ from __future__ import annotations
 
 import json
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 
 # =============================================================================
 # CHB-003 (P0-003): IcebergEnrichedSink DLQ when table=None
@@ -76,10 +75,7 @@ class TestCHB003IcebergSinkDLQOnNoneTable:
         sink._breaker = None
 
         # Add records to buffer
-        records = [
-            {"transaction_id": f"txn-{i:03d}", "amount": 100.0}
-            for i in range(3)
-        ]
+        records = [{"transaction_id": f"txn-{i:03d}", "amount": 100.0} for i in range(3)]
         sink._buffer = list(records)
 
         # Flush should route all records to DLQ
@@ -89,11 +85,7 @@ class TestCHB003IcebergSinkDLQOnNoneTable:
         assert len(sink._buffer) == 0
 
         # Verify DLQ events were emitted for each record
-        dlq_messages = [
-            r.message
-            for r in caplog.records
-            if "iceberg_sink_dlq" in r.message
-        ]
+        dlq_messages = [r.message for r in caplog.records if "iceberg_sink_dlq" in r.message]
 
         # Should have 3 DLQ messages (one per record)
         assert len(dlq_messages) == 3, (
@@ -141,17 +133,17 @@ class TestCHB004ScoringMetricsUseSafeWrappers:
     def test_all_scoring_counters_are_safe_wrappers(self):
         """Test that all scoring metrics use Safe wrappers."""
         from pipelines.scoring.metrics import (
+            evaluation_errors_total,
             feature_store_fallback_total,
             feature_store_miss_total,
             iceberg_decisions_buffer_overflow_total,
             iceberg_decisions_catalog_unavailable_total,
-            evaluation_errors_total,
             rule_active_fp_total,
+            rule_evaluations_total,
             rule_flags_total,
             rule_shadow_fp_total,
             rule_shadow_triggers_total,
             rule_triggers_total,
-            rule_evaluations_total,
         )
         from pipelines.scoring.safe_metrics import SafeCounter, SafeGauge, SafeHistogram
 
@@ -160,7 +152,10 @@ class TestCHB004ScoringMetricsUseSafeWrappers:
             ("feature_store_fallback_total", feature_store_fallback_total),
             ("feature_store_miss_total", feature_store_miss_total),
             ("iceberg_decisions_buffer_overflow_total", iceberg_decisions_buffer_overflow_total),
-            ("iceberg_decisions_catalog_unavailable_total", iceberg_decisions_catalog_unavailable_total),
+            (
+                "iceberg_decisions_catalog_unavailable_total",
+                iceberg_decisions_catalog_unavailable_total,
+            ),
             ("evaluation_errors_total", evaluation_errors_total),
             ("rule_active_fp_total", rule_active_fp_total),
             ("rule_flags_total", rule_flags_total),

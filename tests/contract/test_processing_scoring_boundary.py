@@ -68,8 +68,9 @@ class TestProcessingLayerIndependence:
                     imported_names = [alias.name for alias in node.names]
                     scoring_imports.append(f"{module_name}: {imported_names}")
 
-        # The only allowed import is pipelines.scoring.interfaces (which provides interface implementations)
-        # But ideally, processing layer shouldn't even import that - it should just use shared.interfaces
+        # The only allowed import is pipelines.scoring.interfaces (which provides interface
+        # implementations). But ideally, processing layer shouldn't even import that - it should
+        # just use shared.interfaces
         allowed_patterns = [
             "pipelines.scoring.interfaces",  # Interface registration only
         ]
