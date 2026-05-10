@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
-class RuleFamily(str, Enum):
+class RuleFamily(str, Enum):  # noqa: UP042
     """Fraud rule families."""
 
     velocity = "velocity"
@@ -17,7 +17,7 @@ class RuleFamily(str, Enum):
     new_device = "new_device"
 
 
-class RuleMode(str, Enum):
+class RuleMode(str, Enum):  # noqa: UP042
     """Rule execution mode."""
 
     active = "active"

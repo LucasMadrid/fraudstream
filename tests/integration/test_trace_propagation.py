@@ -160,7 +160,7 @@ class TestKafkaTracePropagation:
         }
 
         # Should handle bytes values
-        context = extract_context(headers)
+        _ = extract_context(headers)
         # May return None but should not raise
 
 
@@ -176,7 +176,7 @@ class TestCrossServiceTraceFlow:
                 "transaction_id": sample_transaction["transaction_id"],
                 "service": "fraudstream-processing",
             },
-        ) as processing_span:
+        ) as _:
             processing_trace_id = get_current_trace_id()
 
             # Inject context for Kafka message
@@ -193,7 +193,7 @@ class TestCrossServiceTraceFlow:
         received_headers = kafka_message["headers"]
 
         # Extract context
-        parent_context = extract_context(received_headers)
+        _ = extract_context(received_headers)
 
         # Create child span in scoring service
         with start_span(
@@ -202,7 +202,7 @@ class TestCrossServiceTraceFlow:
                 "transaction_id": sample_transaction["transaction_id"],
                 "service": "fraudstream-scoring",
             },
-        ) as scoring_span:
+        ) as _:
             scoring_trace_id = get_current_trace_id()
 
             # Trace IDs should match across services
@@ -326,7 +326,7 @@ class TestSamplingBehavior:
 
     def test_always_on_sampler_records_all(self):
         """Test that always-on sampler records all spans."""
-        provider = init_tracer_provider(
+        _ = init_tracer_provider(
             service_name="fraudstream-sampling-test",
             sample_rate=1.0,  # Always sample
         )
@@ -339,7 +339,7 @@ class TestSamplingBehavior:
 
     def test_never_sample_sampler(self):
         """Test that zero sampling rate still creates spans but may not export."""
-        provider = init_tracer_provider(
+        _ = init_tracer_provider(
             service_name="fraudstream-sampling-test",
             sample_rate=0.0,  # Never sample
         )
@@ -347,7 +347,7 @@ class TestSamplingBehavior:
         # Even with 0 sampling, spans are still created
         # (they just might not be exported)
         with start_span("unsampled_span"):
-            trace_id = get_current_trace_id()
+            _ = get_current_trace_id()
 
         # Trace ID should still be available for logging correlation
         # even if span is not exported

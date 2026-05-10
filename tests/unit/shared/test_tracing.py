@@ -124,7 +124,7 @@ class TestInitTracerProvider:
         tracing_module._provider = None
 
         with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318"}):
-            with patch.object(tracing_module, "TracerProvider") as mock_provider:
+            with patch.object(tracing_module, "TracerProvider"):
                 with patch.object(trace_api, "set_tracer_provider"):
                     with patch.object(tracing_module, "setup_kafka_propagation"):
                         with patch(
@@ -156,8 +156,8 @@ class TestInitTracerProvider:
         with patch.object(tracing_module, "TracerProvider") as mock_provider:
             with patch.object(trace_api, "set_tracer_provider"):
                 with patch.object(tracing_module, "setup_kafka_propagation"):
-                    provider1 = init_tracer_provider("test-service")
-                    provider2 = init_tracer_provider("test-service")
+                    _ = init_tracer_provider("test-service")
+                    _ = init_tracer_provider("test-service")
 
                     # Provider should be created only once
                     mock_provider.assert_called_once()
@@ -274,7 +274,7 @@ class TestContextPropagation:
             # The extract function should work with the mocked context
             with patch.object(trace_api, "get_current_span") as mock_get:
                 mock_get.return_value = mock_span
-                result = extract_context(carrier)
+                _ = extract_context(carrier)
 
                 mock_extract.assert_called_once_with(carrier)
 
