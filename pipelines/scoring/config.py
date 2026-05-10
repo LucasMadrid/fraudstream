@@ -53,6 +53,9 @@ class ScoringConfig:
     fraud_alerts_dlq_topic: str = field(
         default_factory=lambda: os.environ.get("FRAUD_ALERTS_DLQ_TOPIC", "txn.fraud.alerts.dlq")
     )
+    shadow_decisions_topic: str = field(
+        default_factory=lambda: os.environ.get("SHADOW_DECISIONS_TOPIC", "txn.shadow.decisions")
+    )
     rules_yaml_path: str = field(
         default_factory=lambda: os.environ.get("RULES_YAML_PATH", "/opt/rules/rules.yaml")
     )

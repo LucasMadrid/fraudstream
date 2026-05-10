@@ -6,13 +6,13 @@ Every log record emits at minimum:
 
 from __future__ import annotations
 
-import datetime
 import logging
 import logging.config
 import threading
+from datetime import timezone
 
-# datetime.UTC requires Python 3.11+ (project minimum)
-UTC = datetime.UTC
+# Use timezone.utc for Python 3.9 compatibility
+UTC = timezone.utc
 
 # Thread-local store — operators set this before processing each record
 _tls = threading.local()

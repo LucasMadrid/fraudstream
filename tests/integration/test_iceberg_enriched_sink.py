@@ -427,7 +427,7 @@ def test_enrichment_time_preserved(sink, enriched_record):
     assert len(enrichment_times) == 1
     # Convert epoch ms to datetime for comparison
     expected_dt = datetime.datetime.fromtimestamp(
-        original_enrichment_time / 1000, tz=datetime.UTC
+        original_enrichment_time / 1000, tz=datetime.timezone.utc
     ).replace(tzinfo=None)
     assert enrichment_times[0] == expected_dt
 

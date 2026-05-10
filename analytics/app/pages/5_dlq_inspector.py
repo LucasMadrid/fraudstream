@@ -7,7 +7,7 @@ persistent offset, as mandated by the analytics consumer spec.
 import json
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import streamlit as st
 
@@ -91,7 +91,9 @@ try:
             {
                 "offset": msg.offset(),
                 "partition": msg.partition(),
-                "timestamp": datetime.fromtimestamp(msg.timestamp()[1] / 1000, tz=UTC).isoformat()
+                "timestamp": datetime.fromtimestamp(
+                    msg.timestamp()[1] / 1000, tz=timezone.utc
+                ).isoformat()
                 if msg.timestamp()[1] > 0
                 else "—",
                 "payload": payload,

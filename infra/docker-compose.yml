@@ -305,6 +305,24 @@ services:
       timeout: 5s
       retries: 5
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    container_name: fraudstream-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4318:4318"    # OTLP HTTP receiver
+      - "4317:4317"    # OTLP gRPC receiver
+      - "14268:14268"  # Jaeger thrift collector
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      JAEGER_DISABLED: "false"
+    networks: [fraudstream]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:16686/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   grafana-data:
   minio-data:

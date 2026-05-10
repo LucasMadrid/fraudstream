@@ -8,7 +8,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -58,7 +58,7 @@ class FraudAlertDisplay:
     severity: str
     decision: str
     evaluation_timestamp: datetime
-    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     merchant_id: str = ""
     amount: float = 0.0
     currency: str = ""
@@ -72,9 +72,9 @@ def _deserialize(raw_bytes: bytes) -> FraudAlertDisplay:
     rec = fastavro.schemaless_reader(io.BytesIO(raw_bytes), _get_schema())
     eval_ts = rec["evaluation_timestamp"]
     if isinstance(eval_ts, int):
-        eval_ts = datetime.fromtimestamp(eval_ts / 1000.0, tz=UTC)
+        eval_ts = datetime.fromtimestamp(eval_ts / 1000.0, tz=timezone.utc)
     elif eval_ts.tzinfo is None:
-        eval_ts = eval_ts.replace(tzinfo=UTC)
+        eval_ts = eval_ts.replace(tzinfo=timezone.utc)
     severity: str = rec["severity"]
     return FraudAlertDisplay(
         transaction_id=rec["transaction_id"],

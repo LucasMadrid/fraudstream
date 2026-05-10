@@ -3,7 +3,7 @@
 import io
 import queue
 import re
-from datetime import UTC
+from datetime import timezone
 from unittest.mock import MagicMock, patch
 
 import fastavro
@@ -82,7 +82,7 @@ class TestDeserialize:
         assert alert.rule_triggers == ["VEL-001", "ND-003"]
         assert alert.severity == "critical"
         assert alert.decision == "BLOCK"
-        assert alert.evaluation_timestamp.tzinfo == UTC
+        assert alert.evaluation_timestamp.tzinfo == timezone.utc
 
     @pytest.mark.parametrize(
         "severity,expected_decision",
