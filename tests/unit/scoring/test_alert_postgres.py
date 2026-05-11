@@ -6,7 +6,9 @@ Uses ON CONFLICT (transaction_id) DO NOTHING for idempotency.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import json
+import logging
+from unittest.mock import MagicMock
 
 from pipelines.scoring.types import FraudAlert
 
@@ -129,125 +131,65 @@ class TestAlertPostgresSinkPersist:
         sink.persist(alert)  # second call — must not raise
         assert mock_cur.execute.call_count == 2
 
-
-class TestAlertPostgresSinkReconnection:
-    def test_reconnects_on_dead_connection(self):
-        """_ensure_connection reconnects when SELECT 1 fails."""
+    def test_persist_database_error_does_not_raise(self):
+        """persist() must never raise — DB errors are swallowed internally."""
         from pipelines.scoring.config import ScoringConfig
         from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
 
         config = ScoringConfig()
         sink = AlertPostgresSink(config)
-
-        # Start with no connection
-        sink._conn = None
-
-        with patch.object(sink, "_connect", return_value=None) as mock_connect:
-            sink._ensure_connection()
-
-        # Verify _connect was called when conn was None
-        mock_connect.assert_called_once()
-
-    def test_rollback_on_persist_error(self):
-        """autocommit=True avoids aborted transaction state.
-
-        With autocommit, each statement is its own transaction, so no
-        explicit rollback is needed. We verify autocommit is set.
-        """
-
-        from pipelines.scoring.config import ScoringConfig
-        from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
-
-        config = ScoringConfig()
-        sink = AlertPostgresSink(config)
+        alert = _make_alert()
 
         mock_conn = MagicMock()
-        mock_conn.autocommit = True
         mock_cur = MagicMock()
-        mock_cur.execute.side_effect = [
-            None,  # SELECT 1 in _ensure_connection
-            Exception("some DB error"),  # INSERT fails
-        ]
+        mock_cur.execute.side_effect = Exception("connection reset")
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         sink._conn = mock_conn
 
-        alert = _make_alert()
-        try:
+        sink.persist(alert)  # must not raise
+
+    def test_persist_database_error_emits_dlq_log(self, caplog):
+        """DB errors must produce a structured DLQ log entry."""
+        from pipelines.scoring.config import ScoringConfig
+        from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
+
+        config = ScoringConfig()
+        sink = AlertPostgresSink(config)
+        alert = _make_alert(transaction_id="txn-fail")
+
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.execute.side_effect = Exception("disk full")
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        sink._conn = mock_conn
+
+        with caplog.at_level(logging.WARNING, logger="dlq"):
             sink.persist(alert)
-        except Exception:
-            pass
 
-        # autocommit is set — no aborted transaction state
-        assert mock_conn.autocommit is True
+        dlq_records = [r for r in caplog.records if r.name == "dlq"]
+        assert len(dlq_records) == 1
+        payload = json.loads(dlq_records[0].getMessage())
+        assert payload["event"] == "pg_alert_persist_failed"
+        assert payload["transaction_id"] == "txn-fail"
+        assert "reason" in payload
 
-    def test_close_already_closed_connection(self):
-        """close() doesn't crash if connection already closed."""
+    def test_persist_database_error_rolls_back(self):
+        """DB errors must rollback the connection to keep it usable."""
         from pipelines.scoring.config import ScoringConfig
         from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
 
         config = ScoringConfig()
         sink = AlertPostgresSink(config)
+        alert = _make_alert()
 
         mock_conn = MagicMock()
-        mock_conn.close.side_effect = Exception("already closed")
+        mock_cur = MagicMock()
+        mock_cur.execute.side_effect = Exception("timeout")
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         sink._conn = mock_conn
 
-        # Should not raise
-        sink.close()
-        assert sink._conn is None
-
-    def test_connect_timeout_is_set(self):
-        """connect_timeout=5 is passed to psycopg2.connect()."""
-        from pipelines.scoring.config import ScoringConfig
-        from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
-
-        config = ScoringConfig()
-        sink = AlertPostgresSink(config)
-
-        with patch("psycopg2.connect") as mock_connect:
-            mock_connect.return_value = MagicMock()
-            sink.open()
-            mock_connect.assert_called_once_with(
-                config.fraud_alerts_db_url,
-                connect_timeout=5,
-            )
-
-    def test_persist_retries_once_on_connection_error(self):
-        """persist() retries exactly once on OperationalError."""
-        from unittest.mock import patch
-
-        from pipelines.scoring.config import ScoringConfig
-        from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
-
-        config = ScoringConfig()
-        sink = AlertPostgresSink(config)
-
-        # Create a mock exception class that inherits from Exception
-        class MockOperationalError(Exception):
-            pass
-
-        # Track call count
-        call_count = [0]
-
-        def failing_insert(alert):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise MockOperationalError("connection reset")
-
-        # Set up mock connection
-        mock_conn = MagicMock()
-        sink._conn = mock_conn
-
-        # Patch the psycopg2 module where it's used in the persist method
-        mock_psycopg2 = MagicMock(
-            OperationalError=MockOperationalError, InterfaceError=MockOperationalError
-        )
-        with patch.dict("sys.modules", {"psycopg2": mock_psycopg2}):
-            with patch.object(sink, "_execute_insert", side_effect=failing_insert):
-                with patch.object(sink, "_connect") as mock_reconnect:
-                    alert = _make_alert()
-                    sink.persist(alert)
-
-        # Verify _connect was called for retry (once after the error)
-        mock_reconnect.assert_called_once()
+        sink.persist(alert)
+        mock_conn.rollback.assert_called_once()

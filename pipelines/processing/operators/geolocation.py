@@ -14,16 +14,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _make_cached_lookup(reader):
+    """Return an LRU-cached closure over a specific GeoIP reader instance."""
+    @functools.lru_cache(maxsize=10_000)
+    def _lookup(subnet_str: str) -> dict:
+        return _do_lookup(reader, subnet_str)
+    return _lookup
+
+
 try:  # pragma: no cover
     from pyflink.datastream.functions import MapFunction, RuntimeContext
 
     class GeolocationMapFunction(MapFunction):
         """Stateless map: RawTransaction → (RawTransaction, geo_dict)."""
 
-        def __init__(self, geoip_db_path: str = "") -> None:
+        def __init__(self, geoip_db_path: str = "", reader=None) -> None:
             self._geoip_db_path = geoip_db_path
+            if reader is not None:
+                self._reader = reader
+                self._lookup = _make_cached_lookup(reader)
 
         def open(self, _runtime_context: RuntimeContext) -> None:
+            if hasattr(self, "_reader"):
+                return
             import geoip2.database
 
             try:
@@ -36,21 +49,12 @@ try:  # pragma: no cover
                 )
                 self._reader = None
 
-            @functools.lru_cache(maxsize=10_000)
-            def _lookup(subnet_str: str) -> dict:
-                return _do_lookup(self._reader, subnet_str)
-
-            self._lookup = _lookup
+            self._lookup = _make_cached_lookup(self._reader)
 
         def open_with_reader(self, reader) -> None:
             """Inject a mock reader for testing (no filesystem access)."""
             self._reader = reader
-
-            @functools.lru_cache(maxsize=10_000)
-            def _lookup(subnet_str: str) -> dict:
-                return _do_lookup(self._reader, subnet_str)
-
-            self._lookup = _lookup
+            self._lookup = _make_cached_lookup(reader)
 
         def close(self) -> None:
             if hasattr(self, "_reader") and self._reader is not None:
@@ -72,19 +76,18 @@ except ImportError:
     class GeolocationMapFunction:  # type: ignore[no-redef]  # pragma: no cover
         """Plain-Python stand-in for unit tests."""
 
-        def __init__(self, geoip_db_path: str = "") -> None:
+        def __init__(self, geoip_db_path: str = "", reader=None) -> None:
             self._geoip_db_path = geoip_db_path
-            self._reader = None
+            if reader is not None:
+                self._reader = reader
+                self._lookup = _make_cached_lookup(reader)
+            else:
+                self._reader = None
 
         def open_with_reader(self, reader) -> None:
             """Inject a mock reader for testing."""
             self._reader = reader
-
-            @functools.lru_cache(maxsize=10_000)
-            def _lookup(subnet_str: str) -> dict:
-                return _do_lookup(self._reader, subnet_str)
-
-            self._lookup = _lookup
+            self._lookup = _make_cached_lookup(reader)
 
         def map(self, txn):
             geo = self._lookup(txn.caller_ip_subnet)

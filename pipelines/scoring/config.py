@@ -4,39 +4,11 @@ import logging
 import os
 from dataclasses import dataclass, field
 
+from pipelines.shared.config import _parse_float, _parse_int
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB_URL = "postgresql://fraudstream:fraudstream@localhost:5432/fraudstream"
-
-
-def _parse_int(env_var: str, default: str) -> int:
-    """
-    Read the environment variable named by `env_var` and parse its value as an integer.
-
-    Parameters:
-        env_var (str): Name of the environment variable to read.
-        default (str): Fallback string to use when the environment variable is not set.
-
-    Returns:
-        int: Integer parsed from the environment variable value or from `default`
-            when the variable is absent.
-
-    Raises:
-        ValueError: If the resolved value cannot be converted to an integer.
-    """
-    raw = os.environ.get(env_var, default)
-    try:
-        return int(raw)
-    except ValueError:
-        raise ValueError(f"Environment variable {env_var}={raw!r} must be an integer") from None
-
-
-def _parse_float(env_var: str, default: str) -> float:
-    raw = os.environ.get(env_var, default)
-    try:
-        return float(raw)
-    except ValueError:
-        raise ValueError(f"Environment variable {env_var}={raw!r} must be a float") from None
 
 
 @dataclass

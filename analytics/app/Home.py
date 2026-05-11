@@ -53,7 +53,7 @@ Use the sidebar to navigate:
 | Page | Description |
 |------|-------------|
 | **Live Feed** | Real-time fraud alerts from `txn.fraud.alerts` |
-| **Fraud Rate** | Historical fraud rate trends via Trino/Iceberg |
+| **Fraud Rate** | Historical fraud rate trends via DuckDB/Iceberg |
 | **Rule Triggers** | Rule leaderboard and trigger history |
 | **Model Compare** | Side-by-side model version comparison |
 | **DLQ Inspector** | Dead-letter queue browser |

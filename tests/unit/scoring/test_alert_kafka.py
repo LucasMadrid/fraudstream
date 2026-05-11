@@ -179,88 +179,154 @@ class TestAlertKafkaSinkSerialisation:
         assert len(payload) > 0
 
 
-class TestAlertKafkaSinkClose:
-    def test_close_flushes_and_nulls_producer(self):
+class TestAlertKafkaSinkDlq:
+    """Unit tests for the _on_delivery → _serialise_dlq → DLQ produce path."""
+
+    def _make_sink(self):
         from pipelines.scoring.config import ScoringConfig
         from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
 
-        config = ScoringConfig()
-        sink = AlertKafkaSink(config)
+        sink = AlertKafkaSink(ScoringConfig())
+        sink._producer = MagicMock()
+        return sink
 
-        mock_producer = MagicMock()
-        sink._producer = mock_producer
+    def _truthy_err(self, message: str = "broker timeout"):
+        err = MagicMock()
+        err.__bool__ = lambda _: True
+        err.__str__ = lambda _: message
+        return err
 
-        sink.close()
-
-        mock_producer.flush.assert_called_with(timeout=10)
-        assert sink._producer is None
-
-    def test_close_idempotent(self):
-        from pipelines.scoring.config import ScoringConfig
-        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
-
-        config = ScoringConfig()
-        sink = AlertKafkaSink(config)
-
-        mock_producer = MagicMock()
-        sink._producer = mock_producer
-
-        sink.close()
-        sink.close()  # second call must not crash
-
-
-class TestAlertKafkaSinkLifecycle:
-    def test_emit_without_open_raises_runtime_error(self):
-        from pipelines.scoring.config import ScoringConfig
-        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
-
-        config = ScoringConfig()
-        sink = AlertKafkaSink(config)
+    def test_on_delivery_success_does_not_produce_to_dlq(self):
+        """err=None (successful delivery) must never trigger a DLQ produce."""
+        sink = self._make_sink()
         alert = _make_alert()
 
-        with pytest.raises(RuntimeError, match="open\\(\\) must be called"):
-            sink.emit(alert)
+        sink._on_delivery(None, MagicMock(), alert)
 
+        sink._producer.produce.assert_not_called()
 
-class TestAlertKafkaSinkDLQSafety:
-    def test_on_delivery_error_serialisation_failure_does_not_crash(self):
+    def test_on_delivery_error_uses_transaction_id_as_dlq_key(self):
+        """DLQ record key must be transaction_id encoded as bytes."""
+        sink = self._make_sink()
+        alert = _make_alert(transaction_id="txn-dlq-key")
+
+        sink._on_delivery(self._truthy_err(), MagicMock(), alert)
+
+        call_kwargs = sink._producer.produce.call_args[1]
+        assert call_kwargs["key"] == b"txn-dlq-key"
+
+    def test_on_delivery_error_routes_to_dlq_topic(self):
+        """DLQ produce must target fraud_alerts_dlq_topic, not alerts topic."""
         from pipelines.scoring.config import ScoringConfig
-        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
 
         config = ScoringConfig()
-        sink = AlertKafkaSink(config)
+        sink = self._make_sink()
         alert = _make_alert()
 
-        mock_producer = MagicMock()
-        sink._producer = mock_producer
+        sink._on_delivery(self._truthy_err(), MagicMock(), alert)
 
-        mock_err = MagicMock()
-        mock_err.__bool__ = lambda self: True
-        mock_msg = MagicMock()
+        call_kwargs = sink._producer.produce.call_args[1]
+        assert call_kwargs["topic"] == config.fraud_alerts_dlq_topic
 
-        # Make _serialise_dlq throw
-        sink._serialise_dlq = MagicMock(side_effect=Exception("avro boom"))
+    def test_serialise_dlq_returns_decodable_avro(self):
+        """_serialise_dlq must return valid Avro bytes decodable against the DLQ schema."""
+        import io
 
-        # Must not raise
-        sink._on_delivery(mock_err, mock_msg, alert)
+        import fastavro
 
-    def test_on_delivery_dlq_produce_has_callback(self):
-        from pipelines.scoring.config import ScoringConfig
-        from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
-
-        config = ScoringConfig()
-        sink = AlertKafkaSink(config)
+        sink = self._make_sink()
         alert = _make_alert()
 
-        mock_producer = MagicMock()
-        sink._producer = mock_producer
+        payload = sink._serialise_dlq(alert, error_type="DELIVERY_FAILURE", error_message="oops")
 
-        mock_err = MagicMock()
-        mock_err.__bool__ = lambda self: True
-        mock_msg = MagicMock()
+        assert isinstance(payload, bytes)
+        records = list(fastavro.reader(io.BytesIO(payload)))
+        assert len(records) == 1
 
-        sink._on_delivery(mock_err, mock_msg, alert)
+    def test_serialise_dlq_payload_contains_error_type(self):
+        """DLQ payload must include error_type=DELIVERY_FAILURE set by _on_delivery."""
+        import io
 
-        call_kwargs = mock_producer.produce.call_args[1]
-        assert "on_delivery" in call_kwargs
-        assert call_kwargs["on_delivery"] is AlertKafkaSink._on_dlq_delivery
+        import fastavro
+
+        sink = self._make_sink()
+        alert = _make_alert()
+
+        payload = sink._serialise_dlq(alert, error_type="DELIVERY_FAILURE", error_message="x")
+
+        record = list(fastavro.reader(io.BytesIO(payload)))[0]
+        assert record["error_type"] == "DELIVERY_FAILURE"
+
+    def test_serialise_dlq_payload_contains_error_message(self):
+        """DLQ payload must carry the original error string from the delivery callback."""
+        import io
+
+        import fastavro
+
+        sink = self._make_sink()
+        alert = _make_alert()
+        error_msg = "Broker: Message size too large"
+
+        payload = sink._serialise_dlq(alert, error_type="DELIVERY_FAILURE", error_message=error_msg)
+
+        record = list(fastavro.reader(io.BytesIO(payload)))[0]
+        assert record["error_message"] == error_msg
+
+    def test_serialise_dlq_payload_preserves_alert_fields(self):
+        """DLQ payload must preserve all original FraudAlert fields."""
+        import io
+
+        import fastavro
+
+        sink = self._make_sink()
+        alert = _make_alert(
+            transaction_id="txn-preserve",
+            account_id="acc-preserve",
+            matched_rule_names=["VEL-001", "ND-003"],
+            severity="critical",
+            evaluation_timestamp=1_700_000_000_000,
+        )
+
+        payload = sink._serialise_dlq(alert, error_type="DELIVERY_FAILURE", error_message="err")
+
+        from datetime import datetime, timezone
+
+        record = list(fastavro.reader(io.BytesIO(payload)))[0]
+        assert record["transaction_id"] == "txn-preserve"
+        assert record["account_id"] == "acc-preserve"
+        assert record["matched_rule_names"] == ["VEL-001", "ND-003"]
+        assert record["severity"] == "critical"
+        expected_ts = datetime.fromtimestamp(1_700_000_000_000 / 1000, tz=timezone.utc)
+        assert record["evaluation_timestamp"] == expected_ts
+
+    def test_serialise_dlq_payload_includes_failed_at_timestamp(self):
+        """DLQ payload must include a failed_at epoch-ms timestamp."""
+        import io
+        import time
+        from datetime import datetime
+
+        import fastavro
+
+        sink = self._make_sink()
+        alert = _make_alert()
+
+        before_ms = int(time.time() * 1000)
+        payload = sink._serialise_dlq(alert, error_type="DELIVERY_FAILURE", error_message="err")
+        after_ms = int(time.time() * 1000)
+
+        record = list(fastavro.reader(io.BytesIO(payload)))[0]
+        assert isinstance(record["failed_at"], datetime)
+        record_ms = int(record["failed_at"].timestamp() * 1000)
+        assert before_ms <= record_ms <= after_ms
+
+    def test_on_delivery_error_dlq_value_is_avro_bytes(self):
+        """The value produced to DLQ must be non-empty bytes (Avro-encoded)."""
+        sink = self._make_sink()
+        alert = _make_alert()
+
+        sink._on_delivery(self._truthy_err("kafka err"), MagicMock(), alert)
+
+        call_kwargs = sink._producer.produce.call_args[1]
+        value = call_kwargs["value"]
+        assert isinstance(value, bytes)
+        assert len(value) > 0

@@ -8,10 +8,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from functools import lru_cache
-from pathlib import Path
-
+from datetime import UTC, datetime
 import fastavro
 from confluent_kafka import Consumer, KafkaException, TopicPartition
 
@@ -23,23 +20,16 @@ from analytics.consumers.metrics import (
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_PATH = (
-    Path(__file__).parents[2] / "pipelines" / "scoring" / "schemas" / "fraud-alert-v1.avsc"
-)
-
-
-@lru_cache(maxsize=1)
-def _get_schema() -> object:
-    """Load and cache the parsed Avro schema for FraudAlert messages."""
-    return fastavro.schema.load_schema(str(_SCHEMA_PATH))
-
-
 _SEVERITY_TO_DECISION = {
     "critical": "BLOCK",
     "high": "BLOCK",
     "medium": "FLAG",
     "low": "ALLOW",
 }
+
+_REQUIRED_AVRO_FIELDS = frozenset(
+    {"transaction_id", "account_id", "matched_rule_names", "severity", "evaluation_timestamp"}
+)
 
 CONSUMER_GROUP = "analytics.dashboard"
 TOPIC = "txn.fraud.alerts"
@@ -58,7 +48,7 @@ class FraudAlertDisplay:
     severity: str
     decision: str
     evaluation_timestamp: datetime
-    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     merchant_id: str = ""
     amount: float = 0.0
     currency: str = ""
@@ -68,18 +58,24 @@ class FraudAlertDisplay:
 
 
 def _deserialize(raw_bytes: bytes) -> FraudAlertDisplay:
-    """Deserialize an Avro-encoded fraud alert and return a FraudAlertDisplay."""
-    rec = fastavro.schemaless_reader(io.BytesIO(raw_bytes), _get_schema())
+    """Deserialize an Avro container-encoded fraud alert and return a FraudAlertDisplay."""
+    records = list(fastavro.reader(io.BytesIO(raw_bytes)))
+    if not records:
+        raise ValueError("Empty Avro container — no records")
+    rec = records[0]
+    missing = _REQUIRED_AVRO_FIELDS - rec.keys()
+    if missing:
+        raise ValueError(f"Missing required Avro fields: {missing}")
     eval_ts = rec["evaluation_timestamp"]
     if isinstance(eval_ts, int):
-        eval_ts = datetime.fromtimestamp(eval_ts / 1000.0, tz=timezone.utc)
+        eval_ts = datetime.fromtimestamp(eval_ts / 1000.0, tz=UTC)
     elif eval_ts.tzinfo is None:
-        eval_ts = eval_ts.replace(tzinfo=timezone.utc)
+        eval_ts = eval_ts.replace(tzinfo=UTC)
     severity: str = rec["severity"]
     return FraudAlertDisplay(
         transaction_id=rec["transaction_id"],
         account_id=rec["account_id"],
-        rule_triggers=list(rec["matched_rule_names"]),
+        rule_triggers=list(rec["matched_rule_names"])[:100],
         severity=severity,
         decision=_SEVERITY_TO_DECISION.get(severity, "UNKNOWN"),
         evaluation_timestamp=eval_ts,
@@ -130,6 +126,17 @@ class AnalyticsKafkaConsumer:
         """Most-recently-measured unconsumed-message lag across all partitions."""
         with self._lag_lock:
             return self._lag
+
+    def _enqueue(self, alert: FraudAlertDisplay) -> None:
+        """Write alert to the in-memory queue, evicting the oldest entry when full."""
+        try:
+            self.queue.put_nowait(alert)
+        except queue.Full:
+            try:
+                self.queue.get_nowait()
+            except queue.Empty:
+                pass
+            self.queue.put_nowait(alert)
 
     # ── internal loop ───────────────────────────────────────────────────────
 
@@ -188,14 +195,7 @@ class AnalyticsKafkaConsumer:
                         raise KafkaException(msg.error())
                     try:
                         alert = _deserialize(msg.value())
-                        try:
-                            self.queue.put_nowait(alert)
-                        except queue.Full:
-                            try:
-                                self.queue.get_nowait()
-                            except queue.Empty:
-                                pass
-                            self.queue.put_nowait(alert)
+                        self._enqueue(alert)
                         analytics_events_consumed_total.labels(topic=TOPIC).inc()
                     except Exception as de:
                         logger.warning("Deserialization error: %s", de)

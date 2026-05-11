@@ -47,6 +47,12 @@ def start_metrics_server(port: int | None = None) -> None:
     if _metrics_server_started:
         return
     effective_port = port or int(os.environ.get("PROMETHEUS_PORT", "8001"))
-    start_http_server(effective_port)
-    _metrics_server_started = True
-    logger.info("prometheus_metrics_server_started", extra={"port": effective_port})
+    try:
+        start_http_server(effective_port)
+        _metrics_server_started = True
+        logger.info("prometheus_metrics_server_started", extra={"port": effective_port})
+    except OSError:
+        logger.warning(
+            "prometheus_metrics_server_port_in_use port=%d — metrics scraping disabled",
+            effective_port,
+        )

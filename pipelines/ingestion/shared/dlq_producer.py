@@ -1,4 +1,4 @@
-from __future__ import annotations
+"""Dead-letter queue producer — separate Kafka Producer instance."""
 
 import json
 import logging
@@ -6,16 +6,12 @@ import socket
 import time
 import uuid
 
-from confluent_kafka import Producer
-
-from pipelines.shared.dlq_protocol import DLQSink
-
 logger = logging.getLogger(__name__)
 
 DLQ_TOPIC = "txn.api.dlq"
 
 
-class DLQProducer(DLQSink):
+class DLQProducer:
     """Writes DLQEnvelope messages to txn.api.dlq.
 
     Uses acks=1 and linger.ms=5 to avoid blocking on broker issues.
@@ -23,6 +19,8 @@ class DLQProducer(DLQSink):
     """
 
     def __init__(self, bootstrap_servers: str) -> None:
+        from confluent_kafka import Producer
+
         self._producer = Producer(
             {
                 "bootstrap.servers": bootstrap_servers,
@@ -30,26 +28,6 @@ class DLQProducer(DLQSink):
                 "linger.ms": 5,
                 "client.id": f"dlq-producer-{socket.gethostname()}",
             }
-        )
-
-    def send(
-        self,
-        *,
-        source_topic: str,
-        original_payload: bytes,
-        error_type: str,
-        error_message: str,
-    ) -> None:
-        """Send a record to the DLQ (implements DLQSink protocol).
-
-        Delegates to send_to_dlq() after decoding bytes payload to string.
-        """
-        self.send_to_dlq(
-            source_topic=source_topic,
-            original_payload=original_payload.decode("utf-8", errors="replace"),
-            error_type=error_type,
-            error_message=error_message,
-            masking_applied=False,
         )
 
     def send_to_dlq(
@@ -89,6 +67,23 @@ class DLQProducer(DLQSink):
                 "error_type": error_type,
                 "masking_applied": masking_applied,
             },
+        )
+
+    def send(
+        self,
+        *,
+        source_topic: str,
+        original_payload: bytes,
+        error_type: str,
+        error_message: str,
+    ) -> None:
+        """Satisfy DLQSink protocol — delegates to send_to_dlq with masking_applied=False."""
+        self.send_to_dlq(
+            source_topic=source_topic,
+            original_payload=original_payload.decode("utf-8", errors="replace"),
+            error_type=error_type,
+            error_message=error_message,
+            masking_applied=False,
         )
 
     def flush(self, timeout: float = 5.0) -> None:

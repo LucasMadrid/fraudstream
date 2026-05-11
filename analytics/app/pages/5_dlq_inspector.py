@@ -6,6 +6,7 @@ persistent offset, as mandated by the analytics consumer spec.
 
 import json
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -19,7 +20,7 @@ FETCH_MAX = 100
 @st.cache_resource
 def _session_group() -> str:
     """Return a stable ephemeral consumer-group ID for this Streamlit process."""
-    return f"dlq-inspector-{uuid.uuid4().hex[:8]}"
+    return f"dlq-inspector-{uuid.uuid4().hex}"
 
 
 GROUP_ID = _session_group()
@@ -63,8 +64,8 @@ try:
 
     deadline = 5.0
     fetched = 0
-    start = __import__("time").monotonic()
-    while fetched < fetch_n and (__import__("time").monotonic() - start) < deadline:
+    start = time.monotonic()
+    while fetched < fetch_n and (time.monotonic() - start) < deadline:
         msg = consumer.poll(1.0)
         if msg is None:
             continue
@@ -74,7 +75,7 @@ try:
         raw = msg.value()
         try:
             payload = json.loads(raw)
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             payload = {"_raw": raw.decode("utf-8", errors="replace")}
 
         if mask_pii:
@@ -125,7 +126,5 @@ else:
             st.json(m["payload"])
 
 if auto_refresh:
-    import time
-
     time.sleep(30)
     st.rerun()

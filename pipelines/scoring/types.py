@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 
 class FallbackReason(Enum):
@@ -33,6 +33,36 @@ class FeatureVector:
     prev_geo_country: str
     prev_txn_time_ms: int
 
+    @classmethod
+    def from_feast_dict(cls, account_id: str, values: dict) -> "FeatureVector":
+        """Construct from the per-feature values dict returned by Feast online store."""
+        return cls(
+            account_id=account_id,
+            vel_count_1m=int(values.get("vel_count_1m") or 0),
+            vel_amount_1m=float(values.get("vel_amount_1m") or 0.0),
+            vel_count_5m=int(values.get("vel_count_5m") or 0),
+            vel_amount_5m=float(values.get("vel_amount_5m") or 0.0),
+            vel_count_1h=int(values.get("vel_count_1h") or 0),
+            vel_amount_1h=float(values.get("vel_amount_1h") or 0.0),
+            vel_count_24h=int(values.get("vel_count_24h") or 0),
+            vel_amount_24h=float(values.get("vel_amount_24h") or 0.0),
+            geo_country=str(values.get("geo_country") or ""),
+            geo_city=str(values.get("geo_city") or ""),
+            geo_network_class=str(values.get("geo_network_class") or ""),
+            geo_confidence=float(values.get("geo_confidence") or 0.0),
+            device_first_seen=int(values.get("device_first_seen") or 0),
+            device_txn_count=int(values.get("device_txn_count") or 0),
+            device_known_fraud=bool(values.get("device_known_fraud") or False),
+            prev_geo_country=str(values.get("prev_geo_country") or ""),
+            prev_txn_time_ms=int(values.get("prev_txn_time_ms") or 0),
+        )
+
+    def to_enrichment_dict(self) -> dict[str, object]:
+        """Return all feature fields (excluding account_id) for merging into an enriched transaction dict."""
+        d = asdict(self)
+        d.pop("account_id")
+        return d
+
 
 ZERO_FEATURE_VECTOR = FeatureVector(
     account_id="",
@@ -54,6 +84,15 @@ ZERO_FEATURE_VECTOR = FeatureVector(
     prev_geo_country="",
     prev_txn_time_ms=0,
 )
+
+
+@runtime_checkable
+class FeatureServingProtocol(Protocol):
+    def open(self) -> None: ...
+    def close(self) -> None: ...
+    def get_features(
+        self, account_id: str, transaction_id: str, transaction_timestamp: int
+    ) -> FeatureVector: ...
 
 
 @dataclass

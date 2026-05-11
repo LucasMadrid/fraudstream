@@ -4,30 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from pipelines.scoring.types import FraudDecision
+from pipelines.scoring.types import FeatureServingProtocol, FraudDecision
 
 logger = logging.getLogger(__name__)
-
-# Zero-value feature defaults used when feature enrichment fails.
-_FEATURE_ZERO_DEFAULTS: dict = {
-    "vel_count_1m": 0,
-    "vel_amount_1m": 0.0,
-    "vel_count_5m": 0,
-    "vel_amount_5m": 0.0,
-    "vel_count_1h": 0,
-    "vel_amount_1h": 0.0,
-    "vel_count_24h": 0,
-    "vel_amount_24h": 0.0,
-    "geo_country": "",
-    "geo_city": "",
-    "geo_network_class": "UNKNOWN",
-    "geo_confidence": 0.0,
-    "device_first_seen": 0,
-    "device_txn_count": 0,
-    "device_known_fraud": False,
-    "prev_geo_country": None,
-    "prev_txn_time_ms": None,
-}
 
 
 class _FeatureEnrichmentFunction:
@@ -37,17 +16,20 @@ class _FeatureEnrichmentFunction:
     into the transaction dict before passing downstream to the rule evaluator.
     """
 
-    def __init__(self, feature_store_repo_path: str = "storage/feature_store") -> None:
+    def __init__(
+        self,
+        feature_store_repo_path: str = "storage/feature_store",
+        client: FeatureServingProtocol | None = None,
+    ) -> None:
         self._repo_path = feature_store_repo_path
-        self._client = None
+        self._client: FeatureServingProtocol | None = client
 
     def open(self, runtime_context=None) -> None:
-        from pipelines.scoring.clients.feature_serving import FeatureServingClient
+        if self._client is None:
+            from pipelines.scoring.clients.feature_serving import FeatureServingClient
 
-        self._client = FeatureServingClient(
-            feature_store_repo_path=self._repo_path,
-        )
-        self._client.open()
+            self._client = FeatureServingClient(feature_store_repo_path=self._repo_path)
+            self._client.open()
 
     def map(self, txn: dict) -> dict:
         account_id = txn.get("account_id", "")
@@ -57,27 +39,7 @@ class _FeatureEnrichmentFunction:
         fv = self._client.get_features(account_id, transaction_id, transaction_timestamp)
 
         enriched = dict(txn)
-        enriched.update(
-            {
-                "vel_count_1m": fv.vel_count_1m,
-                "vel_amount_1m": fv.vel_amount_1m,
-                "vel_count_5m": fv.vel_count_5m,
-                "vel_amount_5m": fv.vel_amount_5m,
-                "vel_count_1h": fv.vel_count_1h,
-                "vel_amount_1h": fv.vel_amount_1h,
-                "vel_count_24h": fv.vel_count_24h,
-                "vel_amount_24h": fv.vel_amount_24h,
-                "geo_country": fv.geo_country,
-                "geo_city": fv.geo_city,
-                "geo_network_class": fv.geo_network_class,
-                "geo_confidence": fv.geo_confidence,
-                "device_first_seen": fv.device_first_seen,
-                "device_txn_count": fv.device_txn_count,
-                "device_known_fraud": fv.device_known_fraud,
-                "prev_geo_country": fv.prev_geo_country,
-                "prev_txn_time_ms": fv.prev_txn_time_ms,
-            }
-        )
+        enriched.update(fv.to_enrichment_dict())
         return enriched
 
     def close(self) -> None:
@@ -85,112 +47,56 @@ class _FeatureEnrichmentFunction:
             self._client.close()
 
 
-def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
-    """Attach the rule evaluator and alert sinks to the enriched transaction stream.
-
-    Applies stateless fraud rule evaluation to every enriched record.
-    Suspicious records are forwarded to AlertKafkaSink and AlertPostgresSink.
-    All evaluation outcomes (clean, flag, block) are written to Iceberg as FraudDecision.
-
-    Called from pipelines.processing.job.build_job() after EnrichedRecordAssembler,
-    before the Kafka enriched-record sink.
-
-    Args:
-        enriched_stream: Flink DataStream of enriched transaction dicts.
-        config: ScoringConfig instance (rules_yaml_path, kafka/pg params).
-        rules: List[RuleDefinition] loaded at job startup via RuleLoader.
-    """
-    from pyflink.datastream.functions import MapFunction
-
-    from pipelines.scoring.rules.evaluator import RuleEvaluator
-    from pipelines.scoring.sinks.iceberg_decisions import IcebergDecisionsSink
+def _build_fraud_alert(txn: dict, result) -> "FraudAlert | None":
+    """Return a FraudAlert for suspicious results, None for clean ones."""
     from pipelines.scoring.types import FraudAlert
 
-    # Insert feature enrichment before rule evaluation
-    feature_repo = getattr(config, "feature_store_repo_path", "storage/feature_store")
+    if result.determination != "suspicious":
+        return None
+    return FraudAlert(
+        transaction_id=txn.get("transaction_id", ""),
+        account_id=txn.get("account_id", ""),
+        matched_rule_names=result.matched_rules,
+        severity=result.highest_severity or "low",
+        evaluation_timestamp=result.evaluation_timestamp,
+    )
+
+
+def _evaluate_transaction(evaluator, num_rules: int, txn: dict):
+    """Evaluate a single enriched transaction dict and return (alert | None, decision).
+
+    Pure Python — no Flink dependency. Callable directly from unit tests.
+    """
+    from pipelines.scoring.telemetry import fraud_rule_evaluation_span
+
+    txn_id = txn.get("transaction_id", "")
+    channel = txn.get("channel", "unknown")
+
+    with fraud_rule_evaluation_span(txn_id, channel, num_rules) as span:
+        result = evaluator.dispatch(txn)
+        alert = _build_fraud_alert(txn, result)
+        decision = _build_fraud_decision(txn, result)
+        span.set_attribute("fraud.decision", decision.decision)
+
+    return (alert, decision)
+
+
+try:  # pragma: no cover
+    from pyflink.datastream.functions import MapFunction
 
     class _FlinkFeatureEnrichmentFunction(MapFunction):
+        def __init__(self, feature_repo: str) -> None:
+            self._feature_repo = feature_repo
+
         def open(self, runtime_context):
-            self._fn = _FeatureEnrichmentFunction(feature_store_repo_path=feature_repo)
+            self._fn = _FeatureEnrichmentFunction(feature_store_repo_path=self._feature_repo)
             self._fn.open(runtime_context)
 
         def map(self, value):
-            try:
-                return self._fn.map(value)
-            except Exception as exc:  # noqa: BLE001
-                from pipelines.scoring.metrics import feature_store_fallback_total
-
-                logger.warning(
-                    "Feature enrichment failed for txn=%s — using zero defaults: %s",
-                    value.get("transaction_id", "") if isinstance(value, dict) else "",
-                    exc,
-                )
-                feature_store_fallback_total.labels(
-                    reason="enrichment_error",
-                ).inc()
-                fallback = dict(value) if isinstance(value, dict) else {}
-                fallback.update(_FEATURE_ZERO_DEFAULTS)
-                return fallback
+            return self._fn.map(value)
 
         def close(self):
             self._fn.close()
-
-    enriched_stream = enriched_stream.map(_FlinkFeatureEnrichmentFunction(), output_type=None)
-
-    evaluator = RuleEvaluator(rules)
-
-    def _evaluate(txn: dict):
-        """Evaluate transaction and return tuple of (optional alert, decision)."""
-        try:
-            result = evaluator.dispatch(txn)
-
-            # Create FraudAlert only for suspicious transactions
-            alert = None
-            if result.determination == "suspicious":
-                alert = FraudAlert(
-                    transaction_id=txn.get("transaction_id", ""),
-                    account_id=txn.get("account_id", ""),
-                    matched_rule_names=result.matched_rules,
-                    severity=result.highest_severity or "low",
-                    evaluation_timestamp=result.evaluation_timestamp,
-                )
-
-            # Create FraudDecision for ALL transactions
-            decision = _build_fraud_decision(txn, result)
-
-            return (alert, decision)
-        except Exception as exc:  # noqa: BLE001
-            from pipelines.scoring.metrics import evaluation_errors_total
-
-            txn_id = txn.get("transaction_id", "") if isinstance(txn, dict) else ""
-            logger.error(
-                "Rule evaluation failed for txn=%s — returning ALLOW: %s",
-                txn_id,
-                exc,
-            )
-            evaluation_errors_total.inc()
-            default_decision = FraudDecision(
-                transaction_id=txn_id,
-                decision="ALLOW",
-                fraud_score=0.0,
-                rule_triggers=[],
-                model_version="rule-only",
-                decision_time_ms=0,
-                latency_ms=0.0,
-                schema_version="1",
-            )
-            return (None, default_decision)
-
-    # Evaluate every transaction and split into alerts and decisions
-    eval_stream = enriched_stream.map(_evaluate, output_type=None)
-
-    # Extract alerts (may be None) and filter
-    alert_stream = eval_stream.map(lambda x: x[0], output_type=None).filter(
-        lambda alert: alert is not None
-    )
-
-    # Extract decisions and wire to Iceberg sink
-    decision_stream = eval_stream.map(lambda x: x[1], output_type=None)
 
     class _AlertSinkFunction(MapFunction):
         """Combined Kafka + PostgreSQL sink for fraud alerts.
@@ -212,36 +118,26 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
             self._kafka_sink = AlertKafkaSink(self._config)
             self._kafka_sink.open()
             self._pg_sink = AlertPostgresSink(self._config)
-            self._pg_sink.open()
+            try:
+                self._pg_sink.open()
+            except Exception as exc:
+                logger.warning(
+                    "PostgreSQL sink unavailable — alerts will be Kafka-only: %s", exc
+                )
+                self._pg_sink = None
 
         def map(self, value):
             # Kafka emit is the primary alert path (FR-010: back-pressure must
-            # propagate upstream). KafkaException/BufferError must raise.
-            # ValueError and serialization errors are bad-record issues — log
-            # and continue so one malformed alert cannot crash the pipeline.
-            try:
-                self._kafka_sink.emit(value)
-            except (ValueError, TypeError, AttributeError) as exc:
-                logger.error(
-                    "Kafka alert serialisation failed for txn=%s — skipping emit: %s",
-                    getattr(value, "transaction_id", ""),
-                    exc,
-                )
-            # PostgreSQL is best-effort durability; a transient DB failure must
-            # not stall the pipeline or drop the Kafka alert already emitted.
-            try:
-                self._pg_sink.persist(value)
-            except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "PostgreSQL persist failed for txn=%s — alert emitted to Kafka only: %s",
-                    value.transaction_id,
-                    exc,
-                )
+            # propagate upstream). Let failures raise — do not catch here.
+            self._kafka_sink.emit(value)
+            # PostgreSQL is best-effort durability — emit() never raises.
+            if self._pg_sink is not None:
+                self._pg_sink.emit(value)
             return value
 
         def close(self):
             if self._kafka_sink:
-                self._kafka_sink.close()
+                self._kafka_sink.flush()
             if self._pg_sink:
                 self._pg_sink.close()
 
@@ -256,11 +152,12 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
             self._sink = None
 
         def open(self, runtime_context):
+            from pipelines.scoring.sinks.iceberg_decisions import IcebergDecisionsSink
+
             self._sink = IcebergDecisionsSink()
             self._sink.open(runtime_context)
 
         def map(self, value):
-            # IcebergDecisionsSink.invoke catches all exceptions internally
             if self._sink and value is not None:
                 self._sink.invoke(value, None)
             return value
@@ -269,10 +166,44 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
             if self._sink:
                 self._sink.close()
 
+except ImportError:
+    pass
+
+
+def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
+    """Attach the rule evaluator and alert sinks to the enriched transaction stream.
+
+    Applies stateless fraud rule evaluation to every enriched record.
+    Suspicious records are forwarded to AlertKafkaSink and AlertPostgresSink.
+    All evaluation outcomes (clean, flag, block) are written to Iceberg as FraudDecision.
+
+    Called from pipelines.processing.job.build_job() after EnrichedRecordAssembler,
+    before the Kafka enriched-record sink.
+
+    Args:
+        enriched_stream: Flink DataStream of enriched transaction dicts.
+        config: ScoringConfig instance (rules_yaml_path, kafka/pg params).
+        rules: List[RuleDefinition] loaded at job startup via RuleLoader.
+    """
+    from pipelines.scoring.rules.evaluator import RuleEvaluator
+
+    feature_repo = getattr(config, "feature_store_repo_path", "storage/feature_store")
+    enriched_stream = enriched_stream.map(
+        _FlinkFeatureEnrichmentFunction(feature_repo), output_type=None
+    )
+
+    evaluator = RuleEvaluator(rules)
+    eval_stream = enriched_stream.map(
+        lambda txn: _evaluate_transaction(evaluator, len(rules), txn), output_type=None
+    )
+
+    alert_stream = eval_stream.map(lambda x: x[0], output_type=None).filter(
+        lambda alert: alert is not None
+    )
+    decision_stream = eval_stream.map(lambda x: x[1], output_type=None)
+
     # print() acts as a terminal sink so Flink does not prune the map node.
     alert_stream.map(_AlertSinkFunction(config)).print()
-
-    # Wire Iceberg decisions sink (additive, does not interfere with alerts)
     decision_stream.map(_IcebergSinkFunction()).print()
 
 

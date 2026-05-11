@@ -1,4 +1,4 @@
-"""Model version comparison — historical stats from Trino v_model_versions."""
+"""Model version comparison — historical stats via PyIceberg → DuckDB."""
 
 import streamlit as st
 
@@ -13,16 +13,15 @@ except ImportError as e:
     st.error(f"Missing dependency: {e}")
     st.stop()
 
+from analytics.app.widgets import run_query
+
 days = st.sidebar.slider("Lookback (days)", min_value=1, max_value=90, value=30)
 
-try:
-    summary = model_version_summary(days=days)
-except Exception as e:
-    st.error(f"Trino query failed: {e}")
-    st.stop()
-
+summary = run_query(
+    lambda: model_version_summary(days=days),
+    "No model version data found for the selected period.",
+)
 if summary.empty:
-    st.info("No model version data found for the selected period.")
     st.stop()
 
 # ── Summary table ─────────────────────────────────────────────────────────────
@@ -52,12 +51,9 @@ if len(versions) >= 2:
     v_a = col_a.selectbox("Version A", versions, index=0)
     v_b = col_b.selectbox("Version B", versions, index=min(1, len(versions) - 1))
 
-    try:
-        da = model_version_daily(v_a, days=days)
-        db = model_version_daily(v_b, days=days)
-    except Exception as e:
-        st.error(f"Trino query failed: {e}")
-    else:
+    da = run_query(lambda: model_version_daily(v_a, days=days), f"No daily data for {v_a}.")
+    db = run_query(lambda: model_version_daily(v_b, days=days), f"No daily data for {v_b}.")
+    if not da.empty and not db.empty:
         da["decision_date"] = pd.to_datetime(da["decision_date"])
         db["decision_date"] = pd.to_datetime(db["decision_date"])
 

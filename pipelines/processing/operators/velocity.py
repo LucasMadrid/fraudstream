@@ -16,6 +16,7 @@ from decimal import Decimal
 from pipelines.processing.logging_config import set_transaction_id
 from pipelines.processing.metrics import (
     corrected_record_latency_ms,
+    last_watermark_advance_epoch,
     late_events_within_window_total,
 )
 
@@ -128,14 +129,7 @@ try:  # pragma: no cover
             ctx.timer_service().register_event_time_timer(event_time_ms + _RETENTION_MS)
             ctx.timer_service().register_event_time_timer(event_time_ms + _IDLE_TTL_MS)
 
-            try:
-                from pipelines.processing.metrics import (
-                    last_watermark_advance_epoch,
-                )
-
-                last_watermark_advance_epoch.set(time.time())
-            except Exception:
-                pass
+            last_watermark_advance_epoch.set(time.time())
 
             yield txn, velocity
 
@@ -149,13 +143,8 @@ try:  # pragma: no cover
 
         def process_element_pure(self, event_time_ms: int, amount: Decimal) -> dict:
             """Test-facing method: update in-memory state and return velocity dict."""
-            bucket_key = event_time_ms // 60_000
-            existing = self._pure_state.get(bucket_key, (0, Decimal("0")))
-            self._pure_state[bucket_key] = (
-                existing[0] + 1,
-                existing[1] + amount,
-            )
-            return _compute_velocity_from_dict(self._pure_state, bucket_key)
+            _, velocity = _update_velocity_state(self._pure_state, event_time_ms, amount)
+            return velocity
 
 except ImportError:
     # pyflink not installed — plain-Python fallback for unit tests
@@ -169,13 +158,18 @@ except ImportError:
 
         def process_element_pure(self, event_time_ms: int, amount: Decimal) -> dict:
             """Test-facing method: update state and return velocity dict."""
-            bucket_key = event_time_ms // 60_000
-            existing = self._state.get(bucket_key, (0, Decimal("0")))
-            self._state[bucket_key] = (
-                existing[0] + 1,
-                existing[1] + amount,
-            )
-            return _compute_velocity_from_dict(self._state, bucket_key)
+            _, velocity = _update_velocity_state(self._state, event_time_ms, amount)
+            return velocity
+
+
+def _update_velocity_state(
+    state: dict[int, tuple[int, Decimal]], event_time_ms: int, amount: Decimal
+) -> tuple[dict[int, tuple[int, Decimal]], dict]:
+    """Pure state-machine core: mutates state dict in place, returns velocity dict."""
+    bucket_key = event_time_ms // 60_000
+    existing = state.get(bucket_key, (0, Decimal("0")))
+    state[bucket_key] = (existing[0] + 1, existing[1] + amount)
+    return state, _compute_velocity_from_dict(state, bucket_key)
 
 
 def _compute_velocity(buckets, current_bucket: int) -> dict:  # pragma: no cover

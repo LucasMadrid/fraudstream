@@ -36,6 +36,40 @@ _NULL_DEVICE_FIELDS: dict = {
 }
 
 
+def _update_device_state(
+    current: DeviceProfileState | None,
+    event_time_ms: int,
+    geo_country: str | None,
+) -> tuple[DeviceProfileState, dict]:
+    """Pure state-machine core: accepts old state, returns (new state, device fields dict)."""
+    prev_geo_country = current.last_geo_country if current else None
+    prev_txn_time_ms = current.last_seen_ms if current else None
+    if current is None:
+        updated = DeviceProfileState(
+            first_seen_ms=event_time_ms,
+            txn_count=1,
+            known_fraud=False,
+            last_seen_ms=event_time_ms,
+            last_geo_country=geo_country,
+        )
+    else:
+        updated = DeviceProfileState(
+            first_seen_ms=current.first_seen_ms,
+            txn_count=current.txn_count + 1,
+            known_fraud=current.known_fraud,
+            last_seen_ms=event_time_ms,
+            last_geo_country=geo_country,
+        )
+    device_fields = {
+        "device_first_seen": updated.first_seen_ms,
+        "device_txn_count": updated.txn_count,
+        "device_known_fraud": updated.known_fraud,
+        "prev_geo_country": prev_geo_country,
+        "prev_txn_time_ms": prev_txn_time_ms,
+    }
+    return updated, device_fields
+
+
 try:  # pragma: no cover
     from pyflink.common import Types
     from pyflink.common.time import Time
@@ -75,41 +109,12 @@ try:  # pragma: no cover
                 return
 
             event_time_ms: int = ctx.timestamp()
-            current: DeviceProfileState | None = self._state.value()
-            prev_geo_country = current.last_geo_country if current else None
-            prev_txn_time_ms = current.last_seen_ms if current else None
-
-            if current is None:
-                updated = DeviceProfileState(
-                    first_seen_ms=event_time_ms,
-                    txn_count=1,
-                    known_fraud=False,
-                    last_seen_ms=event_time_ms,
-                    last_geo_country=geo.get("geo_country"),
-                )
-            else:
-                updated = DeviceProfileState(
-                    first_seen_ms=current.first_seen_ms,
-                    txn_count=current.txn_count + 1,
-                    known_fraud=current.known_fraud,
-                    last_seen_ms=event_time_ms,
-                    last_geo_country=geo.get("geo_country"),
-                )
-
+            updated, device_fields = _update_device_state(
+                self._state.value(), event_time_ms, geo.get("geo_country")
+            )
             self._state.update(updated)
             ctx.timer_service().register_event_time_timer(event_time_ms + _IDLE_TTL_MS)
-            yield (
-                txn,
-                velocity,
-                geo,
-                {
-                    "device_first_seen": updated.first_seen_ms,
-                    "device_txn_count": updated.txn_count,
-                    "device_known_fraud": updated.known_fraud,
-                    "prev_geo_country": prev_geo_country,
-                    "prev_txn_time_ms": prev_txn_time_ms,
-                },
-            )
+            yield txn, velocity, geo, device_fields
 
         def on_timer(self, _timestamp: int, _ctx) -> None:
             self._state.clear()
@@ -118,35 +123,11 @@ try:  # pragma: no cover
             """Test-friendly: update in-memory state, return device fields dict."""
             if not api_key_id:
                 return dict(_NULL_DEVICE_FIELDS)
-
-            current = self._pure_state.get(api_key_id)
-            prev_geo_country = current.last_geo_country if current else None
-            prev_txn_time_ms = current.last_seen_ms if current else None
-
-            if current is None:
-                updated = DeviceProfileState(
-                    first_seen_ms=event_time_ms,
-                    txn_count=1,
-                    known_fraud=False,
-                    last_seen_ms=event_time_ms,
-                    last_geo_country=None,
-                )
-            else:
-                updated = DeviceProfileState(
-                    first_seen_ms=current.first_seen_ms,
-                    txn_count=current.txn_count + 1,
-                    known_fraud=current.known_fraud,
-                    last_seen_ms=event_time_ms,
-                    last_geo_country=None,
-                )
+            updated, device_fields = _update_device_state(
+                self._pure_state.get(api_key_id), event_time_ms, None
+            )
             self._pure_state[api_key_id] = updated
-            return {
-                "device_first_seen": updated.first_seen_ms,
-                "device_txn_count": updated.txn_count,
-                "device_known_fraud": updated.known_fraud,
-                "prev_geo_country": prev_geo_country,
-                "prev_txn_time_ms": prev_txn_time_ms,
-            }
+            return device_fields
 
 except ImportError:
     # pyflink not installed — plain-Python fallback for unit tests
@@ -161,32 +142,8 @@ except ImportError:
             """Update state and return device fields dict."""
             if not api_key_id:
                 return dict(_NULL_DEVICE_FIELDS)
-
-            current = self._state.get(api_key_id)
-            prev_geo_country = current.last_geo_country if current else None
-            prev_txn_time_ms = current.last_seen_ms if current else None
-
-            if current is None:
-                updated = DeviceProfileState(
-                    first_seen_ms=event_time_ms,
-                    txn_count=1,
-                    known_fraud=False,
-                    last_seen_ms=event_time_ms,
-                    last_geo_country=None,
-                )
-            else:
-                updated = DeviceProfileState(
-                    first_seen_ms=current.first_seen_ms,
-                    txn_count=current.txn_count + 1,
-                    known_fraud=current.known_fraud,
-                    last_seen_ms=event_time_ms,
-                    last_geo_country=None,
-                )
+            updated, device_fields = _update_device_state(
+                self._state.get(api_key_id), event_time_ms, None
+            )
             self._state[api_key_id] = updated
-            return {
-                "device_first_seen": updated.first_seen_ms,
-                "device_txn_count": updated.txn_count,
-                "device_known_fraud": updated.known_fraud,
-                "prev_geo_country": prev_geo_country,
-                "prev_txn_time_ms": prev_txn_time_ms,
-            }
+            return device_fields

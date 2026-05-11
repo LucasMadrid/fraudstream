@@ -2,105 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import logging
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from pipelines.processing.operators.iceberg_sink import (
-    IcebergEnrichedSink,
-    _DLQEvent,
-    _emit_dlq_event,
-    _increment_counter,
-)
-
-
-class TestDLQEvent:
-    """Test _DLQEvent dataclass."""
-
-    def test_creates_dlq_event(self):
-        event = _DLQEvent(
-            transaction_id="txn-001",
-            reason="timeout",
-            batch_size=50,
-        )
-        assert event.transaction_id == "txn-001"
-        assert event.reason == "timeout"
-        assert event.batch_size == 50
-
-    def test_dlq_event_frozen(self):
-        event = _DLQEvent(
-            transaction_id="txn-001",
-            reason="timeout",
-            batch_size=50,
-        )
-        with pytest.raises(AttributeError):
-            event.transaction_id = "txn-002"
-
-
-class TestEmitDLQEvent:
-    """Test _emit_dlq_event function."""
-
-    def test_logs_dlq_event_as_json(self, caplog):
-        caplog.set_level(logging.WARNING, logger="dlq")
-        event = _DLQEvent(
-            transaction_id="txn-001",
-            reason="timeout",
-            batch_size=42,
-        )
-        _emit_dlq_event(event)
-
-        assert len(caplog.records) == 1
-        record = caplog.records[0]
-        assert record.name == "dlq"
-        assert "iceberg_sink_dlq" in record.message
-        assert "txn-001" in record.message
-        assert "timeout" in record.message
-        assert "42" in record.message
-
-    def test_dlq_event_is_valid_json(self, caplog):
-        caplog.set_level(logging.WARNING, logger="dlq")
-        event = _DLQEvent(
-            transaction_id="txn-123",
-            reason="circuit_open",
-            batch_size=100,
-        )
-        _emit_dlq_event(event)
-
-        record = caplog.records[0]
-        parsed = json.loads(record.message)
-        assert parsed["event"] == "iceberg_sink_dlq"
-        assert parsed["transaction_id"] == "txn-123"
-        assert parsed["reason"] == "circuit_open"
-        assert parsed["batch_size"] == 100
-
-
-class TestIncrementCounter:
-    """Test _increment_counter function."""
-
-    def test_increments_iceberg_buffer_overflow_total(self):
-        with patch("pipelines.processing.metrics.iceberg_buffer_overflow_total") as mock:
-            _increment_counter("iceberg_buffer_overflow_total")
-            mock.inc.assert_called_once()
-
-    def test_increments_iceberg_catalog_unavailable_total(self):
-        with patch("pipelines.processing.metrics.iceberg_catalog_unavailable_total") as mock:
-            _increment_counter("iceberg_catalog_unavailable_total")
-            mock.inc.assert_called_once()
-
-    def test_swallows_import_error(self):
-        # Should not raise if metrics unavailable
-        with patch(
-            "pipelines.processing.operators.iceberg_sink.logger",
-        ):
-            _increment_counter("iceberg_buffer_overflow_total")
-
-    def test_increments_feast_push_failures_total(self):
-        with patch("pipelines.processing.metrics.feast_push_failures_total") as mock:
-            _increment_counter("feast_push_failures_total")
-            mock.inc.assert_called_once()
+from pipelines.processing.operators.iceberg_sink import IcebergEnrichedSink
 
 
 class TestIcebergEnrichedSinkInit:
@@ -112,7 +19,7 @@ class TestIcebergEnrichedSinkInit:
         assert isinstance(sink._last_flush_time_sec, float)
         assert sink._table is None
         assert sink._breaker is None
-        assert sink._feast_store is None
+        assert sink._materializer is None
 
     def test_buffer_type_is_list_of_dicts(self):
         sink = IcebergEnrichedSink()
@@ -159,22 +66,13 @@ class TestIcebergEnrichedSinkDeduplication:
 
     def test_deduplicates_within_buffer(self):
         sink = IcebergEnrichedSink()
-
-        # Add records with duplicates
-        sink._buffer = [
+        records = [
             {"transaction_id": "txn-001", "amount": Decimal("100.00")},
             {"transaction_id": "txn-002", "amount": Decimal("200.00")},
             {"transaction_id": "txn-001", "amount": Decimal("150.00")},  # duplicate
         ]
 
-        # Manually call the dedup logic from _flush
-        seen_txn_ids: set[str] = set()
-        deduplicated: list[dict] = []
-        for record in sink._buffer:
-            txn_id = record.get("transaction_id", "")
-            if txn_id not in seen_txn_ids:
-                seen_txn_ids.add(txn_id)
-                deduplicated.append(record)
+        deduplicated = sink._deduplicate(records)
 
         assert len(deduplicated) == 2
         assert deduplicated[0]["transaction_id"] == "txn-001"
@@ -183,7 +81,7 @@ class TestIcebergEnrichedSinkDeduplication:
 
     def test_dedup_preserves_order(self):
         sink = IcebergEnrichedSink()
-        sink._buffer = [
+        records = [
             {"transaction_id": "a"},
             {"transaction_id": "b"},
             {"transaction_id": "c"},
@@ -191,13 +89,7 @@ class TestIcebergEnrichedSinkDeduplication:
             {"transaction_id": "b"},  # duplicate
         ]
 
-        seen_txn_ids: set[str] = set()
-        deduplicated: list[dict] = []
-        for record in sink._buffer:
-            txn_id = record.get("transaction_id", "")
-            if txn_id not in seen_txn_ids:
-                seen_txn_ids.add(txn_id)
-                deduplicated.append(record)
+        deduplicated = sink._deduplicate(records)
 
         assert [r["transaction_id"] for r in deduplicated] == ["a", "b", "c"]
 

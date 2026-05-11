@@ -20,11 +20,8 @@ from pipelines.scoring.rules.families.new_device import evaluate_new_device
 from pipelines.scoring.rules.families.velocity import evaluate_velocity
 from pipelines.scoring.rules.models import RuleDefinition, RuleFamily, RuleMode, Severity
 from pipelines.scoring.types import EvaluationResult
-from pipelines.shared.tracing import get_tracer
 
 logger = logging.getLogger(__name__)
-
-tracer = get_tracer(__name__)
 
 _FAMILY_DISPATCH: dict[RuleFamily, Callable[[dict, dict], bool]] = {
     RuleFamily.velocity: evaluate_velocity,
@@ -36,8 +33,13 @@ _FAMILY_DISPATCH: dict[RuleFamily, Callable[[dict, dict], bool]] = {
 class RuleEvaluator:
     """Evaluates a transaction against a set of fraud detection rules."""
 
-    def __init__(self, rules: list[RuleDefinition]) -> None:
+    def __init__(
+        self,
+        rules: list[RuleDefinition],
+        dispatch: dict[RuleFamily, Callable[[dict, dict], bool]] | None = None,
+    ) -> None:
         self._rules = [r for r in rules if r.enabled]
+        self._dispatch = dispatch if dispatch is not None else _FAMILY_DISPATCH
 
     def dispatch(self, txn: dict) -> EvaluationResult:
         """Evaluate all enabled rules against the transaction.
@@ -49,75 +51,53 @@ class RuleEvaluator:
             EvaluationResult with determination, matched rules, and highest
             severity.
         """
-        with tracer.start_as_current_span("rule_evaluator.dispatch") as span:
-            transaction_id = txn.get("transaction_id", "")
-            span.set_attribute("fraud.transaction_id", transaction_id)
-            span.set_attribute("rule_count", len(self._rules))
+        active_matched: list[str] = []
+        shadow_matched: list[str] = []
+        triggered_severities: list[Severity] = []
 
-            active_matched: list[str] = []
-            shadow_matched: list[str] = []
-            triggered_severities: list[Severity] = []
+        for rule in self._rules:
+            evaluate_fn = self._dispatch.get(rule.family)
+            if evaluate_fn is None:
+                continue
+            record_evaluation(rule.rule_id, rule.family.value)
+            if evaluate_fn(txn, rule.conditions):
+                if rule.mode == RuleMode.shadow:
+                    shadow_matched.append(rule.rule_id)
+                    record_shadow_trigger(rule.rule_id)
+                else:
+                    active_matched.append(rule.rule_id)
+                    triggered_severities.append(rule.severity)
+                    record_flag(rule.rule_id, rule.family.value, rule.severity.name)
+                    record_trigger(rule.rule_id)
 
-            for rule in self._rules:
-                with tracer.start_as_current_span(f"evaluate_rule.{rule.rule_id}") as rule_span:
-                    rule_span.set_attribute("rule.id", rule.rule_id)
-                    rule_span.set_attribute("rule.family", rule.family.value)
-                    rule_span.set_attribute("rule.mode", rule.mode.value)
+        # matched_rules includes active rule IDs and shadow rule IDs with ":shadow" suffix
+        matched_rules = active_matched + [f"{r}:shadow" for r in shadow_matched]
+        determination = "suspicious" if active_matched else "clean"
+        highest_severity = max(triggered_severities).name if triggered_severities else None
+        evaluation_timestamp = int(time.time() * 1000)
 
-                    evaluate_fn = _FAMILY_DISPATCH.get(rule.family)
-                    if evaluate_fn is None:
-                        rule_span.set_attribute("rule.skipped", True)
-                        continue
+        if determination == "clean":
+            for rule_id in shadow_matched:
+                record_shadow_fp(rule_id)
 
-                    record_evaluation(rule.rule_id, rule.family.value)
-                    rule_matched = evaluate_fn(txn, rule.conditions)
-                    rule_span.set_attribute("rule.matched", rule_matched)
-
-                    if rule_matched:
-                        if rule.mode == RuleMode.shadow:
-                            shadow_matched.append(rule.rule_id)
-                            record_shadow_trigger(rule.rule_id)
-                        else:
-                            active_matched.append(rule.rule_id)
-                            triggered_severities.append(rule.severity)
-                            record_flag(rule.rule_id, rule.family.value, rule.severity.name)
-                            record_trigger(rule.rule_id)
-
-            # matched_rules includes active rule IDs and shadow rule IDs with ":shadow" suffix
-            matched_rules = active_matched + [f"{r}:shadow" for r in shadow_matched]
-            determination = "suspicious" if active_matched else "clean"
-            highest_severity = max(triggered_severities).name if triggered_severities else None
-            evaluation_timestamp = int(time.time() * 1000)
-
-            # Set span attributes for result
-            span.set_attribute("fraud.determination", determination)
-            span.set_attribute("fraud.matched_rule_count", len(active_matched))
-            span.set_attribute("fraud.shadow_rule_count", len(shadow_matched))
-            if highest_severity:
-                span.set_attribute("fraud.highest_severity", highest_severity)
-
-            if determination == "clean":
-                for rule_id in shadow_matched:
-                    record_shadow_fp(rule_id)
-
-            if active_matched:
-                logger.info(
-                    "Fraud flag raised",
-                    extra={
-                        "transaction_id": transaction_id,
-                        "matched_rules": active_matched,
-                        "highest_severity": highest_severity,
-                        "evaluation_timestamp": evaluation_timestamp,
-                    },
-                )
-
-            return EvaluationResult(
-                determination=determination,
-                matched_rules=matched_rules,
-                highest_severity=highest_severity,
-                evaluation_timestamp=evaluation_timestamp,
-                missing_fields=[],
+        if active_matched:
+            logger.info(
+                "Fraud flag raised",
+                extra={
+                    "transaction_id": txn.get("transaction_id"),
+                    "matched_rules": active_matched,
+                    "highest_severity": highest_severity,
+                    "evaluation_timestamp": evaluation_timestamp,
+                },
             )
+
+        return EvaluationResult(
+            determination=determination,
+            matched_rules=matched_rules,
+            highest_severity=highest_severity,
+            evaluation_timestamp=evaluation_timestamp,
+            missing_fields=[],
+        )
 
 
 class RuleEvaluatorProcessFunction:
@@ -141,65 +121,3 @@ class RuleEvaluatorProcessFunction:
         if self._evaluator is None:
             raise RuntimeError("open() must be called before process_element()")
         return self._evaluator.dispatch(txn)
-
-
-class ShadowRuleEvaluator:
-    """Evaluates transactions against shadow rules for comparison with production.
-
-    Similar to RuleEvaluator but only evaluates rules marked as shadow mode,
-    producing an independent determination for shadow analytics.
-    """
-
-    def __init__(self, rules: list[RuleDefinition]) -> None:
-        # Only keep enabled shadow rules
-        self._rules = [r for r in rules if r.enabled and r.mode == RuleMode.shadow]
-
-    def dispatch(self, txn: dict) -> EvaluationResult:
-        """Evaluate all enabled shadow rules against the transaction.
-
-        Args:
-            txn: Avro-decoded enriched transaction dict.
-
-        Returns:
-            EvaluationResult with shadow determination and matched shadow rules.
-        """
-        shadow_matched: list[str] = []
-        triggered_severities: list[Severity] = []
-
-        for rule in self._rules:
-            with tracer.start_as_current_span(f"evaluate_shadow_rule.{rule.rule_id}") as rule_span:
-                rule_span.set_attribute("rule.id", rule.rule_id)
-                rule_span.set_attribute("rule.family", rule.family.value)
-                rule_span.set_attribute("rule.mode", "shadow")
-
-                evaluate_fn = _FAMILY_DISPATCH.get(rule.family)
-                if evaluate_fn is None:
-                    rule_span.set_attribute("rule.skipped", True)
-                    continue
-
-                record_evaluation(rule.rule_id, rule.family.value)
-                rule_matched = evaluate_fn(txn, rule.conditions)
-                rule_span.set_attribute("rule.matched", rule_matched)
-
-                if rule_matched:
-                    shadow_matched.append(rule.rule_id)
-                    triggered_severities.append(rule.severity)
-                    record_shadow_trigger(rule.rule_id)
-
-        determination = "suspicious" if shadow_matched else "clean"
-        highest_severity = max(triggered_severities).name if triggered_severities else None
-        evaluation_timestamp = int(time.time() * 1000)
-
-        if determination == "clean":
-            # Record shadow FP for all rules that didn't trigger (false positives)
-            for rule in self._rules:
-                if rule.rule_id not in shadow_matched:
-                    record_shadow_fp(rule.rule_id)
-
-        return EvaluationResult(
-            determination=determination,
-            matched_rules=shadow_matched,
-            highest_severity=highest_severity,
-            evaluation_timestamp=evaluation_timestamp,
-            missing_fields=[],
-        )

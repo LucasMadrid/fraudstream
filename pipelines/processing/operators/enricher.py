@@ -7,6 +7,8 @@ import os
 import time
 
 from pipelines.processing.logging_config import set_transaction_id
+from pipelines.processing.metrics import dedup_skipped_total
+from pipelines.processing.metrics import enrichment_latency_ms as enrichment_latency_ms_metric
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +27,13 @@ try:  # pragma: no cover
     class EnrichedRecordAssembler(FlatMapFunction):
         """Stateless: assembles the final EnrichedTransactionEvent."""
 
-        def __init__(self) -> None:
+        def __init__(self, sink: IcebergEnrichedSink | None = None) -> None:
             super().__init__()
-            self._iceberg_sink: IcebergEnrichedSink | None = None
+            self._iceberg_sink: IcebergEnrichedSink | None = sink
 
         def open(self, _runtime_context) -> None:
-            self._iceberg_sink = IcebergEnrichedSink()
+            if self._iceberg_sink is None:
+                self._iceberg_sink = IcebergEnrichedSink()
             self._iceberg_sink.open(_runtime_context)
 
         def close(self) -> None:
@@ -46,14 +49,7 @@ try:  # pragma: no cover
             set_transaction_id(getattr(txn, "transaction_id", None))
             enrichment_time = int(time.time() * 1000)
             enrichment_latency_ms = max(0, enrichment_time - txn.processing_time)
-            try:
-                from pipelines.processing.metrics import (
-                    enrichment_latency_ms as lat_metric,
-                )
-
-                lat_metric.observe(enrichment_latency_ms)
-            except Exception:
-                pass
+            enrichment_latency_ms_metric.observe(enrichment_latency_ms)
             record = _assemble_record(
                 txn,
                 velocity_dict,
@@ -107,14 +103,7 @@ try:  # pragma: no cover
         def process_element(self, txn, ctx):
             set_transaction_id(getattr(txn, "transaction_id", None))
             if self._seen.value() is not None:
-                try:
-                    from pipelines.processing.metrics import (
-                        dedup_skipped_total,
-                    )
-
-                    dedup_skipped_total.inc()
-                except Exception:
-                    pass
+                dedup_skipped_total.inc()
                 return
             self._seen.update(ctx.timestamp())
             yield txn
@@ -133,6 +122,9 @@ except ImportError:
     class EnrichedRecordAssembler:  # type: ignore[no-redef]  # pragma: no cover
         """Plain-Python stand-in for unit tests."""
 
+        def __init__(self, sink=None) -> None:
+            self._iceberg_sink = sink
+
         def assemble(self, txn, velocity_dict, geo_dict, device_dict) -> dict:
             enrichment_time = int(time.time() * 1000)
             enrichment_latency_ms = max(
@@ -147,10 +139,8 @@ except ImportError:
                 enrichment_time,
                 enrichment_latency_ms,
             )
-            # Write to Iceberg (side-output)
-            if not hasattr(self, "_iceberg_sink"):
-                self._iceberg_sink = IcebergEnrichedSink()
-            self._iceberg_sink.invoke(record, None)
+            if self._iceberg_sink is not None:
+                self._iceberg_sink.invoke(record, None)
             return record
 
     class TransactionDedup:  # type: ignore[no-redef]  # pragma: no cover

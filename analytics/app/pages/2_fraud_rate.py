@@ -1,4 +1,4 @@
-"""Fraud rate historical page — queries Trino v_fraud_rate_daily view."""
+"""Fraud rate historical page — queries Iceberg via PyIceberg → DuckDB."""
 
 import streamlit as st
 
@@ -13,6 +13,8 @@ except ImportError as e:
     st.error(f"Missing dependency: {e}")
     st.stop()
 
+from analytics.app.widgets import run_query
+
 days = st.sidebar.slider("Lookback (days)", min_value=1, max_value=90, value=30)
 
 tab_trend, tab_channel, tab_raw = st.tabs(["Trend", "By Channel", "Raw Data"])
@@ -20,15 +22,8 @@ tab_trend, tab_channel, tab_raw = st.tabs(["Trend", "By Channel", "Raw Data"])
 # ── Tab 1: trend ──────────────────────────────────────────────────────────────
 with tab_trend:
     st.subheader(f"Daily Fraud Rate — last {days} days")
-    try:
-        df = fraud_rate_daily(days=days)
-    except Exception as e:
-        st.error(f"Trino query failed: {e}")
-        st.stop()
-
-    if df.empty:
-        st.info("No data in the selected period.")
-    else:
+    df = run_query(lambda: fraud_rate_daily(days=days), "No data in the selected period.")
+    if not df.empty:
         df["decision_date"] = pd.to_datetime(df["decision_date"])
         fraud_df = (
             df[df["decision"] == "BLOCK"]
@@ -44,15 +39,8 @@ with tab_trend:
 # ── Tab 2: by channel ─────────────────────────────────────────────────────────
 with tab_channel:
     st.subheader(f"Breakdown by Channel — last {days} days")
-    try:
-        ch_df = fraud_rate_by_channel(days=days)
-    except Exception as e:
-        st.error(f"Trino query failed: {e}")
-        st.stop()
-
-    if ch_df.empty:
-        st.info("No data.")
-    else:
+    ch_df = run_query(lambda: fraud_rate_by_channel(days=days), "No data.")
+    if not ch_df.empty:
         pivot = ch_df.pivot_table(
             index="channel", columns="decision", values="total_txns", fill_value=0
         )
@@ -62,13 +50,10 @@ with tab_channel:
 # ── Tab 3: raw ────────────────────────────────────────────────────────────────
 with tab_raw:
     st.subheader("Raw View Data")
-    try:
-        raw = fraud_rate_daily(days=days)
-    except Exception as e:
-        st.error(f"Trino query failed: {e}")
-        st.stop()
-    st.dataframe(raw, use_container_width=True, hide_index=True)
-    st.caption(
-        "⚠️ `avg_fraud_score` and `p99_latency_ms` are computed with "
-        "APPROX_PERCENTILE — approximate values."
-    )
+    raw = run_query(lambda: fraud_rate_daily(days=days))
+    if not raw.empty:
+        st.dataframe(raw, use_container_width=True, hide_index=True)
+        st.caption(
+            "⚠️ `avg_fraud_score` and `p99_latency_ms` are computed with "
+            "APPROX_PERCENTILE — approximate values."
+        )

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from pipelines.scoring.config import ScoringConfig
 from pipelines.scoring.types import FraudAlert
-from pipelines.shared.alert_protocol import AlertSink
 
 logger = logging.getLogger(__name__)
+dlq_logger = logging.getLogger("dlq")
 
 _INSERT_SQL = """
 INSERT INTO fraud_alerts (
@@ -22,7 +23,7 @@ ON CONFLICT (transaction_id) DO NOTHING
 """
 
 
-class AlertPostgresSink(AlertSink):
+class AlertPostgresSink:
     """Persists FraudAlert records to the fraud_alerts PostgreSQL table.
 
     Uses ON CONFLICT (transaction_id) DO NOTHING for idempotency — safe to
@@ -33,89 +34,53 @@ class AlertPostgresSink(AlertSink):
         self._config = config
         self._conn = None
 
-    def emit(self, alert: FraudAlert) -> None:
-        """Emit a fraud alert to PostgreSQL (implements AlertSink protocol).
-
-        Delegates to persist() for the actual database operation.
-        """
-        self.persist(alert)
-
     def open(self) -> None:
         """Open database connection."""
         import psycopg2
 
-        self._conn = psycopg2.connect(
-            self._config.fraud_alerts_db_url,
-            connect_timeout=5,
-        )
-        self._conn.autocommit = True
-
-    def _ensure_connection(self) -> None:
-        """Ping DB with SELECT 1; reconnect if dead."""
-        if self._conn is None:
-            self._connect()
-            return
-        try:
-            cur = self._conn.cursor()
-            cur.execute("SELECT 1")
-            cur.close()
-        except Exception:
-            logger.warning("DB connection lost, reconnecting...")
-            self._connect()
-
-    def _connect(self) -> None:
-        """Create a fresh psycopg2 connection."""
-        import psycopg2
-
-        self._conn = psycopg2.connect(
-            self._config.fraud_alerts_db_url,
-            connect_timeout=5,
-        )
-        self._conn.autocommit = True
+        self._conn = psycopg2.connect(self._config.fraud_alerts_db_url)
 
     def persist(self, alert: FraudAlert) -> None:
-        """Insert a FraudAlert into fraud_alerts, ignoring duplicates.
-
-        Retries once on connection errors (OperationalError/InterfaceError).
-
-        Args:
-            alert: The FraudAlert to persist.
-
-        Raises:
-            psycopg2.Error: On unexpected database errors (not duplicate key).
-        """
-        import psycopg2
-
-        self._ensure_connection()
+        """Insert a FraudAlert into fraud_alerts, ignoring duplicates. Never raises."""
         try:
-            self._execute_insert(alert)
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            logger.warning("Connection error during persist, retrying once...")
-            self._connect()
-            self._execute_insert(alert)
-
-    def _execute_insert(self, alert: FraudAlert) -> None:
-        """Execute the INSERT statement for a single alert."""
-        with self._conn.cursor() as cur:
-            cur.execute(
-                _INSERT_SQL,
-                (
-                    alert.transaction_id,
-                    alert.account_id,
-                    alert.matched_rule_names,
-                    alert.severity,
-                    alert.evaluation_timestamp,
-                ),
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    _INSERT_SQL,
+                    (
+                        alert.transaction_id,
+                        alert.account_id,
+                        alert.matched_rule_names,
+                        alert.severity,
+                        alert.evaluation_timestamp,
+                    ),
+                )
+            self._conn.commit()
+            logger.debug("Persisted fraud alert for txn=%s", alert.transaction_id)
+        except Exception as exc:
+            logger.warning(
+                "PostgreSQL persist failed for txn=%s: %s — alert already emitted to Kafka",
+                alert.transaction_id,
+                exc,
             )
-        self._conn.commit()
-        logger.debug("Persisted fraud alert for txn=%s", alert.transaction_id)
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            dlq_logger.warning(
+                json.dumps(
+                    {
+                        "event": "pg_alert_persist_failed",
+                        "transaction_id": alert.transaction_id,
+                        "reason": type(exc).__name__,
+                    }
+                )
+            )
+
+    def emit(self, alert: FraudAlert) -> None:
+        """Satisfy AlertSink protocol — delegates to persist()."""
+        self.persist(alert)
 
     def close(self) -> None:
-        """Close DB connection safely — tolerates already-closed state."""
         if self._conn:
-            try:
-                self._conn.close()
-            except Exception:
-                logger.debug("Connection already closed or close failed.")
-            finally:
-                self._conn = None
+            self._conn.close()
+            self._conn = None

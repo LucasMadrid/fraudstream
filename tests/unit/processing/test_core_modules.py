@@ -348,20 +348,18 @@ class TestLoggingConfig:
 # ---------------------------------------------------------------------------
 class TestMetrics:
     def test_metrics_are_importable(self):
-        # Verify they are the expected prometheus_client types
-        from prometheus_client import Counter, Gauge, Histogram
-
         from pipelines.processing.metrics import (
+            _SafeMetric,
             consumer_lag_records,
             dlq_events_total,
             enrichment_latency_ms,
             last_checkpoint_duration_ms,
         )
 
-        assert isinstance(enrichment_latency_ms, Histogram)
-        assert isinstance(dlq_events_total, Counter)
-        assert isinstance(consumer_lag_records, Gauge)
-        assert isinstance(last_checkpoint_duration_ms, Gauge)
+        assert isinstance(enrichment_latency_ms, _SafeMetric)
+        assert isinstance(dlq_events_total, _SafeMetric)
+        assert isinstance(consumer_lag_records, _SafeMetric)
+        assert isinstance(last_checkpoint_duration_ms, _SafeMetric)
 
     def test_dlq_events_total_labels(self):
         from pipelines.processing.metrics import dlq_events_total

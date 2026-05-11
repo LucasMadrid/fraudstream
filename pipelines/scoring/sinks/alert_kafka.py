@@ -17,6 +17,14 @@ _SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "fraud-alert-v1.avsc"
 _DLQ_SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "fraud-alert-dlq-v1.avsc"
 
 
+def _to_avro_bytes(schema: object, record: dict) -> bytes:
+    import fastavro
+
+    buf = io.BytesIO()
+    fastavro.writer(buf, schema, [record])
+    return buf.getvalue()
+
+
 class AlertKafkaSink:
     """Produces FraudAlert records to the fraud alerts Kafka topic.
 
@@ -32,12 +40,10 @@ class AlertKafkaSink:
 
     def open(self) -> None:
         """Initialise Kafka producer and parse Avro schemas."""
-        import fastavro
         from confluent_kafka import Producer
 
         self._producer = Producer({"bootstrap.servers": self._config.kafka_brokers})
-        self._parsed_schema = fastavro.parse_schema(json.loads(_SCHEMA_PATH.read_text()))
-        self._dlq_schema = fastavro.parse_schema(json.loads(_DLQ_SCHEMA_PATH.read_text()))
+        self._load_schemas()
         self._register_schema()
 
     def _register_schema(self) -> None:
@@ -67,26 +73,19 @@ class AlertKafkaSink:
 
     def _serialise(self, alert: FraudAlert) -> bytes:
         """Serialise FraudAlert to Avro bytes."""
-        import fastavro
-
         self._load_schemas()
-        record = {
+        return _to_avro_bytes(self._parsed_schema, {
             "transaction_id": alert.transaction_id,
             "account_id": alert.account_id,
             "matched_rule_names": alert.matched_rule_names,
             "severity": alert.severity,
             "evaluation_timestamp": alert.evaluation_timestamp,
-        }
-        buf = io.BytesIO()
-        fastavro.writer(buf, self._parsed_schema, [record])
-        return buf.getvalue()
+        })
 
     def _serialise_dlq(self, alert: FraudAlert, error_type: str, error_message: str) -> bytes:
         """Serialise a failed alert to DLQ Avro bytes."""
-        import fastavro
-
         self._load_schemas()
-        record = {
+        return _to_avro_bytes(self._dlq_schema, {
             "transaction_id": alert.transaction_id,
             "account_id": alert.account_id,
             "matched_rule_names": alert.matched_rule_names,
@@ -95,10 +94,7 @@ class AlertKafkaSink:
             "error_type": error_type,
             "error_message": error_message,
             "failed_at": int(time.time() * 1000),
-        }
-        buf = io.BytesIO()
-        fastavro.writer(buf, self._dlq_schema, [record])
-        return buf.getvalue()
+        })
 
     def _on_delivery(self, err, msg, alert: FraudAlert) -> None:  # noqa: ARG002
         """Delivery report callback — routes failures to DLQ."""

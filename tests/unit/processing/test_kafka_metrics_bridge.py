@@ -6,17 +6,9 @@ import io
 import json
 import textwrap
 import threading
-from unittest.mock import MagicMock, patch
 
 import pytest
-
-from pipelines.scoring.interfaces import register_interface_implementations
-
-
-@pytest.fixture(autouse=True)
-def _register_interfaces():
-    """Auto-register interface implementations for all tests."""
-    register_interface_implementations()
+from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -85,38 +77,33 @@ class TestBuildRuleFamilyMap:
 # ---------------------------------------------------------------------------
 class TestStartStop:
     def test_start_spawns_two_daemon_threads(self, tmp_path):
-        from unittest.mock import patch as mock_patch
-
         from pipelines.processing import kafka_metrics_bridge
 
         yaml_file = tmp_path / "rules.yaml"
         yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
 
-        # Mock Consumer so threads don't die from no Kafka in CI
-        mock_consumer = MagicMock()
-        mock_consumer.poll.side_effect = lambda timeout: (
-            kafka_metrics_bridge._stop_event.wait(timeout) or None
+        # Use idents (unique per thread), not names — prior tests may have left
+        # threads named "metrics-bridge-*" alive from TestJobMain.main() calls.
+        before_idents = {t.ident for t in threading.enumerate()}
+
+        kafka_metrics_bridge.start(
+            brokers="localhost:9092",
+            alerts_topic="txn.fraud.alerts",
+            enriched_topic="txn.enriched",
+            rules_yaml_path=str(yaml_file),
         )
 
-        with mock_patch("confluent_kafka.Consumer", return_value=mock_consumer):
-            kafka_metrics_bridge.start(
-                brokers="localhost:9092",
-                alerts_topic="txn.fraud.alerts",
-                enriched_topic="txn.enriched",
-                rules_yaml_path=str(yaml_file),
-            )
+        new_threads = [t for t in threading.enumerate() if t.ident not in before_idents]
+        new_names = {t.name for t in new_threads}
+        assert "metrics-bridge-alerts" in new_names
+        assert "metrics-bridge-enriched" in new_names
 
-            # _threads is set synchronously in start(), no race condition
-            assert len(kafka_metrics_bridge._threads) == 2
-            thread_names = {t.name for t in kafka_metrics_bridge._threads}
-            assert "metrics-bridge-alerts" in thread_names
-            assert "metrics-bridge-enriched" in thread_names
-
-            # Verify daemon flag
-            for t in kafka_metrics_bridge._threads:
+        # Verify daemon flag on the newly spawned threads only
+        for t in new_threads:
+            if t.name in ("metrics-bridge-alerts", "metrics-bridge-enriched"):
                 assert t.daemon is True
 
-            kafka_metrics_bridge.stop()
+        kafka_metrics_bridge.stop()
 
     def test_stop_sets_stop_event(self):
         from pipelines.processing import kafka_metrics_bridge
@@ -378,72 +365,105 @@ class TestEnrichedConsumerThread:
 
 
 # ---------------------------------------------------------------------------
-# Thread safety — idempotency, health check, stop
+# _process_alert_message — pure-function tests (no Kafka, no threads)
 # ---------------------------------------------------------------------------
-class TestThreadSafety:
-    def test_start_is_idempotent(self, tmp_path):
-        """Calling start() twice must NOT spawn duplicate threads."""
-        from pipelines.processing import kafka_metrics_bridge
 
-        yaml_file = tmp_path / "rules.yaml"
-        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
 
-        kafka_metrics_bridge.stop()  # clean slate
+def _make_parsed_schema():
+    import fastavro
 
-        kafka_metrics_bridge.start(
-            brokers="localhost:9092",
-            alerts_topic="txn.fraud.alerts",
-            enriched_topic="txn.enriched",
-            rules_yaml_path=str(yaml_file),
-        )
-        first_threads = list(kafka_metrics_bridge._threads)
-        assert len(first_threads) == 2
+    from pipelines.processing.kafka_metrics_bridge import _ALERT_SCHEMA_PATH
 
-        # Second call should be no-op
-        kafka_metrics_bridge.start(
-            brokers="localhost:9092",
-            alerts_topic="txn.fraud.alerts",
-            enriched_topic="txn.enriched",
-            rules_yaml_path=str(yaml_file),
-        )
-        assert len(kafka_metrics_bridge._threads) == 2
-        assert kafka_metrics_bridge._threads == first_threads
+    return fastavro.parse_schema(json.loads(_ALERT_SCHEMA_PATH.read_text()))
 
-        kafka_metrics_bridge.stop()
 
-    def test_is_healthy_returns_false_when_no_threads(self):
-        from pipelines.processing import kafka_metrics_bridge
+def _make_avro_bytes(record: dict) -> bytes:
+    import fastavro
 
-        kafka_metrics_bridge.stop()  # ensure clean
-        assert kafka_metrics_bridge.is_healthy() is False
+    parsed = _make_parsed_schema()
+    buf = io.BytesIO()
+    fastavro.writer(buf, parsed, [record])
+    return buf.getvalue()
 
-    def test_is_healthy_returns_true_when_threads_alive(self, tmp_path):
-        from pipelines.processing import kafka_metrics_bridge
 
-        yaml_file = tmp_path / "rules.yaml"
-        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
+_BASE_RECORD = {
+    "transaction_id": "txn-pam",
+    "account_id": "acc-pam",
+    "matched_rule_names": [],
+    "severity": "low",
+    "evaluation_timestamp": 1_700_000_000_000,
+}
 
-        kafka_metrics_bridge.start(
-            brokers="localhost:9092",
-            alerts_topic="txn.fraud.alerts",
-            enriched_topic="txn.enriched",
-            rules_yaml_path=str(yaml_file),
-        )
-        assert kafka_metrics_bridge.is_healthy() is True
-        kafka_metrics_bridge.stop()
 
-    def test_stop_clears_threads(self, tmp_path):
-        from pipelines.processing import kafka_metrics_bridge
+class TestProcessAlertMessage:
+    """Direct tests for _process_alert_message — no Kafka consumer required."""
 
-        yaml_file = tmp_path / "rules.yaml"
-        yaml_file.write_text("- rule_id: VEL-001\n  family: velocity\n  enabled: true\n")
+    def test_increments_counter_for_matched_rule(self):
+        from pipelines.processing.kafka_metrics_bridge import _process_alert_message
+        from pipelines.scoring.metrics import rule_flags_total
 
-        kafka_metrics_bridge.start(
-            brokers="localhost:9092",
-            alerts_topic="txn.fraud.alerts",
-            enriched_topic="txn.enriched",
-            rules_yaml_path=str(yaml_file),
-        )
-        assert len(kafka_metrics_bridge._threads) == 2
-        kafka_metrics_bridge.stop()
-        assert len(kafka_metrics_bridge._threads) == 0
+        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["VEL-PAM"], "severity": "high"})
+        parsed = _make_parsed_schema()
+
+        _process_alert_message(raw, parsed, {"VEL-PAM": "velocity"})
+
+        val = rule_flags_total.labels(rule_id="VEL-PAM", rule_family="velocity", severity="high")._value.get()
+        assert val >= 1
+
+    def test_shadow_rules_not_counted(self):
+        from pipelines.processing.kafka_metrics_bridge import _process_alert_message
+        from pipelines.scoring.metrics import rule_flags_total
+
+        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["VEL-001:shadow"], "severity": "medium"})
+        parsed = _make_parsed_schema()
+
+        before = rule_flags_total.labels(rule_id="VEL-001:shadow", rule_family="unknown", severity="medium")._value.get()
+        _process_alert_message(raw, parsed, {})
+        after = rule_flags_total.labels(rule_id="VEL-001:shadow", rule_family="unknown", severity="medium")._value.get()
+
+        assert after == before
+
+    def test_unknown_rule_uses_unknown_family(self):
+        from pipelines.processing.kafka_metrics_bridge import _process_alert_message
+        from pipelines.scoring.metrics import rule_flags_total
+
+        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["MYSTERY-001"], "severity": "low"})
+        parsed = _make_parsed_schema()
+
+        _process_alert_message(raw, parsed, {})  # empty map → unknown family
+
+        val = rule_flags_total.labels(rule_id="MYSTERY-001", rule_family="unknown", severity="low")._value.get()
+        assert val >= 1
+
+    def test_severity_normalised_to_lowercase(self):
+        from pipelines.processing.kafka_metrics_bridge import _process_alert_message
+        from pipelines.scoring.metrics import rule_flags_total
+
+        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["VEL-LC"], "severity": "critical"})
+        parsed = _make_parsed_schema()
+
+        _process_alert_message(raw, parsed, {"VEL-LC": "velocity"})
+
+        val = rule_flags_total.labels(rule_id="VEL-LC", rule_family="velocity", severity="critical")._value.get()
+        assert val >= 1
+
+    def test_empty_matched_rules_increments_nothing(self):
+        from pipelines.processing.kafka_metrics_bridge import _process_alert_message
+        from pipelines.scoring.metrics import rule_flags_total
+
+        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": [], "severity": "low"})
+        parsed = _make_parsed_schema()
+
+        before = rule_flags_total.labels(rule_id="NOOP", rule_family="unknown", severity="low")._value.get()
+        _process_alert_message(raw, parsed, {})
+        after = rule_flags_total.labels(rule_id="NOOP", rule_family="unknown", severity="low")._value.get()
+
+        assert after == before
+
+    def test_garbage_bytes_raises(self):
+        from pipelines.processing.kafka_metrics_bridge import _process_alert_message
+
+        parsed = _make_parsed_schema()
+
+        with pytest.raises(Exception):
+            _process_alert_message(b"not-avro-garbage", parsed, {})

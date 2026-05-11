@@ -2,21 +2,36 @@
 
 import threading
 
-from prometheus_client import Counter, Gauge, start_http_server
+from prometheus_client import REGISTRY, Counter, Gauge, start_http_server
 
-analytics_consumer_lag = Gauge(
+
+def _gauge(name: str, doc: str, labelnames: list[str] | tuple[()] = ()) -> Gauge:
+    try:
+        return Gauge(name, doc, labelnames)
+    except ValueError:
+        return REGISTRY._names_to_collectors[name]  # type: ignore[return-value]
+
+
+def _counter(name: str, doc: str, labelnames: list[str] | tuple[()] = ()) -> Counter:
+    try:
+        return Counter(name, doc, labelnames)
+    except ValueError:
+        return REGISTRY._names_to_collectors[name]  # type: ignore[return-value]
+
+
+analytics_consumer_lag = _gauge(
     "analytics_consumer_lag",
     "Current consumer lag in messages",
     ["consumer_group", "topic"],
 )
 
-analytics_events_consumed_total = Counter(
+analytics_events_consumed_total = _counter(
     "analytics_events_consumed_total",
     "Total events consumed since startup",
     ["topic"],
 )
 
-analytics_consumer_restarts_total = Counter(
+analytics_consumer_restarts_total = _counter(
     "analytics_consumer_restarts_total",
     "Number of Kafka consumer thread restarts",
 )

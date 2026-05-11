@@ -17,28 +17,9 @@ from pipelines.scoring.types import (
     FallbackReason,
     FeatureVector,
 )
+from pipelines.shared.feature_schema import FEATURE_REFS as _FEATURE_REFS
 
 logger = logging.getLogger("feature_serving")
-
-_FEATURE_REFS = [
-    "velocity_features:vel_count_1m",
-    "velocity_features:vel_amount_1m",
-    "velocity_features:vel_count_5m",
-    "velocity_features:vel_amount_5m",
-    "velocity_features:vel_count_1h",
-    "velocity_features:vel_amount_1h",
-    "velocity_features:vel_count_24h",
-    "velocity_features:vel_amount_24h",
-    "geo_features:geo_country",
-    "geo_features:geo_city",
-    "geo_features:geo_network_class",
-    "geo_features:geo_confidence",
-    "device_features:device_first_seen",
-    "device_features:device_txn_count",
-    "device_features:device_known_fraud",
-    "device_features:prev_geo_country",
-    "device_features:prev_txn_time_ms",
-]
 
 
 def _zero_for(account_id: str) -> FeatureVector:
@@ -51,21 +32,26 @@ class FeatureServingClient:
         feature_store_repo_path: str = "storage/feature_store",
         timeout_seconds: float = 0.003,
         executor_workers: int = 1,
+        executor: concurrent.futures.Executor | None = None,
     ) -> None:
         self._repo_path = feature_store_repo_path
         self._timeout_seconds = timeout_seconds
         self._executor_workers = executor_workers
         self._store = None
-        self._executor: concurrent.futures.ThreadPoolExecutor | None = None
+        self._executor: concurrent.futures.Executor | None = executor
+        self._owns_executor: bool = executor is None
 
     def open(self) -> None:
         import feast
 
         self._store = feast.FeatureStore(repo_path=self._repo_path)
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._executor_workers)
+        if self._executor is None:
+            self._executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=self._executor_workers
+            )
 
     def close(self) -> None:
-        if self._executor is not None:
+        if self._executor is not None and self._owns_executor:
             self._executor.shutdown(wait=False)
 
     def _fetch_from_store(self, account_id: str) -> dict:
@@ -81,7 +67,7 @@ class FeatureServingClient:
         transaction_id: str,
         transaction_timestamp: int,
     ) -> FeatureVector:
-        if self._executor is None:
+        if self._executor is None or self._store is None:
             logger.warning(
                 "feature_serving_client_not_opened",
                 extra={
@@ -136,26 +122,7 @@ class FeatureServingClient:
                 feature_store_miss_total.inc()
                 return _zero_for(account_id)
 
-            return FeatureVector(
-                account_id=account_id,
-                vel_count_1m=int(values.get("vel_count_1m") or 0),
-                vel_amount_1m=float(values.get("vel_amount_1m") or 0.0),
-                vel_count_5m=int(values.get("vel_count_5m") or 0),
-                vel_amount_5m=float(values.get("vel_amount_5m") or 0.0),
-                vel_count_1h=int(values.get("vel_count_1h") or 0),
-                vel_amount_1h=float(values.get("vel_amount_1h") or 0.0),
-                vel_count_24h=int(values.get("vel_count_24h") or 0),
-                vel_amount_24h=float(values.get("vel_amount_24h") or 0.0),
-                geo_country=str(values.get("geo_country") or ""),
-                geo_city=str(values.get("geo_city") or ""),
-                geo_network_class=str(values.get("geo_network_class") or ""),
-                geo_confidence=float(values.get("geo_confidence") or 0.0),
-                device_first_seen=int(values.get("device_first_seen") or 0),
-                device_txn_count=int(values.get("device_txn_count") or 0),
-                device_known_fraud=bool(values.get("device_known_fraud") or False),
-                prev_geo_country=str(values.get("prev_geo_country") or ""),
-                prev_txn_time_ms=int(values.get("prev_txn_time_ms") or 0),
-            )
+            return FeatureVector.from_feast_dict(account_id, values)
 
         except concurrent.futures.TimeoutError:
             elapsed = time.perf_counter() - start

@@ -9,9 +9,7 @@ class TestGeolocationMapFunction:
     def _make_operator(self, reader_mock):
         from pipelines.processing.operators.geolocation import GeolocationMapFunction
 
-        op = GeolocationMapFunction()
-        op.open_with_reader(reader_mock)
-        return op
+        return GeolocationMapFunction(reader=reader_mock)
 
     def _city_record(self, country="US", city="New York"):
         record = MagicMock()

@@ -1,4 +1,4 @@
-"""Persistence layer simulation: write synthetic records to Iceberg, validate via Trino.
+"""Persistence layer simulation: write synthetic records to Iceberg, validate via PyIceberg.
 
 Usage:
     ICEBERG_REST_URI=http://localhost:8181 \
@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import os
 import random
-import subprocess
 import sys
 import time
 import uuid
@@ -133,28 +132,15 @@ def _make_decision_record(txn_id: str, account_id: str, event_time: int) -> dict
 _ALLOWED_TABLES = frozenset({"enriched_transactions", "fraud_decisions"})
 
 
-def _trino_count(table: str) -> int:
-    """Get row count from Iceberg table via Trino CLI in container."""
+def _iceberg_count(table: str) -> int:
+    """Get row count from Iceberg table via PyIceberg scan."""
     if table not in _ALLOWED_TABLES:
         raise ValueError(f"table '{table}' not in allowed list: {_ALLOWED_TABLES}")
-    result = subprocess.run(
-        [
-            "docker",
-            "exec",
-            "fraudstream-trino",
-            "trino",
-            "--server",
-            "localhost:8080",
-            "--execute",
-            f"SELECT COUNT(*) FROM iceberg.default.{table}",
-            "--output-format",
-            "TSV",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip().isdigit()]
-    return int(lines[0]) if lines else -1
+    from pyiceberg.catalog import load_catalog
+
+    catalog = load_catalog("iceberg")
+    arrow_tbl = catalog.load_table(f"default.{table}").scan().to_arrow()
+    return arrow_tbl.num_rows
 
 
 def main() -> int:
@@ -195,19 +181,19 @@ def main() -> int:
     decisions_elapsed = time.monotonic() - t0
     logger.info(f"Decisions sink: {n} records pushed in {decisions_elapsed:.2f}s")
 
-    # --- Validate via Trino ---
+    # --- Validate via PyIceberg ---
     logger.info("Waiting 2s for Iceberg metadata to propagate...")
     time.sleep(2)
 
-    enriched_count = _trino_count("enriched_transactions")
-    decisions_count = _trino_count("fraud_decisions")
+    enriched_count = _iceberg_count("enriched_transactions")
+    decisions_count = _iceberg_count("fraud_decisions")
 
     print("\n" + "=" * 60)
     print("PERSISTENCE LAYER SIMULATION RESULTS")
     print("=" * 60)
-    print(f"  Records generated:               {n}")
-    print(f"  enriched_transactions (Trino):   {enriched_count}")
-    print(f"  fraud_decisions (Trino):         {decisions_count}")
+    print(f"  Records generated:                 {n}")
+    print(f"  enriched_transactions (PyIceberg): {enriched_count}")
+    print(f"  fraud_decisions (PyIceberg):       {decisions_count}")
     print(f"  Enriched write time:             {enriched_elapsed:.2f}s")
     print(f"  Decisions write time:            {decisions_elapsed:.2f}s")
 

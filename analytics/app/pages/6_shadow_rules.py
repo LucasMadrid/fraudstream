@@ -9,6 +9,7 @@ Allows fraud analysts to:
 
 import datetime
 import logging
+import os
 
 import pandas as pd
 import requests
@@ -29,8 +30,8 @@ logger = logging.getLogger(__name__)
 # Configuration & Constants
 # ============================================================================
 
-PROMETHEUS_URL = "http://prometheus:9090/api/v1/query"
-MANAGEMENT_API_URL = "http://scoring-management:8090"
+PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://prometheus:9090/api/v1/query")
+MANAGEMENT_API_URL = os.environ.get("MANAGEMENT_API_URL", "http://scoring-management:8090")
 
 # Prometheus query timeout (seconds)
 QUERY_TIMEOUT = 30

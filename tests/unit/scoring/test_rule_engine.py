@@ -217,11 +217,7 @@ class TestRuleEvaluatorMetrics:
 class TestUnknownFamilySkipped:
     def test_unknown_family_skipped_no_error(self, mock_metrics):
         rule = _make_rule(rule_id="VEL-01", conditions={"field": "vel_count_1m", "count": 5})
-        with patch(
-            "pipelines.scoring.rules.evaluator._FAMILY_DISPATCH",
-            {},  # empty dispatch table — all families unknown
-        ):
-            result = RuleEvaluator([rule]).dispatch({"vel_count_1m": 99})
+        result = RuleEvaluator([rule], dispatch={}).dispatch({"vel_count_1m": 99})
         assert result.determination == "clean"
         assert result.matched_rules == []
         mock_metrics["record_evaluation"].assert_not_called()

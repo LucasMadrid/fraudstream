@@ -60,6 +60,9 @@ analytics = [
     "duckdb>=1.0",
     "pandas>=2.0",
     "pyiceberg[pyarrow,s3fs]>=0.11",
+    "matplotlib>=3.7",
+    # cryptography>=47 uses ARM64 SVE2 SIMD not exposed by Docker's Linux VM
+    "cryptography>=40,<47",
 ]
 
 [tool.setuptools.packages.find]

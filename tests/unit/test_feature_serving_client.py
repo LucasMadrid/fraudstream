@@ -41,16 +41,17 @@ _ALL_NONE_RAW = {k: [None] for k in _POPULATED_RAW}
 
 @pytest.fixture
 def client():
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     c = FeatureServingClient(
         feature_store_repo_path="storage/feature_store",
         timeout_seconds=0.003,
+        executor=executor,
     )
     mock_store = MagicMock()
     mock_store.get_online_features.return_value.to_dict.return_value = _POPULATED_RAW
     c._store = mock_store
-    c._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     yield c
-    c._executor.shutdown(wait=False)
+    executor.shutdown(wait=False)
 
 
 # ---------------------------------------------------------------------------
@@ -205,4 +206,64 @@ class TestCacheMiss:
         ) as mock_ctr:
             fv = client.get_features("acct-partial", "txn-006", 1700000000005)
             mock_ctr.inc.assert_called_once()
+        assert fv.vel_count_1m == 0
+
+
+# ---------------------------------------------------------------------------
+# C30 — Executor injection seam
+# ---------------------------------------------------------------------------
+
+
+class TestExecutorInjection:
+    """Injected executor is used immediately; open() falls back to ThreadPoolExecutor."""
+
+    def test_injected_executor_used_without_open(self):
+        mock_future = MagicMock()
+        mock_future.result.side_effect = concurrent.futures.TimeoutError()
+        mock_exec = MagicMock(spec=concurrent.futures.Executor)
+        mock_exec.submit.return_value = mock_future
+
+        c = FeatureServingClient(timeout_seconds=0.003, executor=mock_exec)
+        c._store = MagicMock()
+
+        fv = c.get_features("acct-x", "txn-x", 0)
+
+        mock_exec.submit.assert_called_once()
+        assert fv.vel_count_1m == 0  # zero-vector fallback on timeout
+
+    def test_open_does_not_replace_injected_executor(self):
+        injected = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        c = FeatureServingClient(
+            feature_store_repo_path="storage/feature_store",
+            executor=injected,
+        )
+        with patch("feast.FeatureStore"):
+            c.open()
+
+        assert c._executor is injected
+        injected.shutdown(wait=False)
+
+    def test_open_builds_executor_when_none_injected(self):
+        c = FeatureServingClient(feature_store_repo_path="storage/feature_store")
+        with patch("feast.FeatureStore"):
+            c.open()
+
+        assert isinstance(c._executor, concurrent.futures.ThreadPoolExecutor)
+        c._executor.shutdown(wait=False)
+
+    def test_close_does_not_shutdown_injected_executor(self):
+        injected = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        c = FeatureServingClient(timeout_seconds=0.003, executor=injected)
+        c.close()
+        assert not injected._shutdown, "caller-owned executor must not be shut down by close()"
+        injected.shutdown(wait=False)
+
+    def test_uninitialised_store_returns_zero_vector(self):
+        mock_exec = MagicMock(spec=concurrent.futures.Executor)
+        c = FeatureServingClient(timeout_seconds=0.003, executor=mock_exec)
+        # _store is None; open() never called
+
+        fv = c.get_features("acct-x", "txn-x", 0)
+
+        mock_exec.submit.assert_not_called()
         assert fv.vel_count_1m == 0

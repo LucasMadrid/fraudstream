@@ -673,9 +673,9 @@ def test_open_initializes_circuit_breaker():
 
     # Verify breaker was initialized
     assert sink._breaker is not None
-    from pybreaker import CircuitBreaker
+    from pipelines.shared.circuit_breaker import IcebergCircuitBreaker
 
-    assert isinstance(sink._breaker, CircuitBreaker)
+    assert isinstance(sink._breaker, IcebergCircuitBreaker)
     assert sink._breaker.fail_max == 3
 
 
