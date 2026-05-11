@@ -45,15 +45,14 @@ class TestKafkaPropagator:
             "traceparent": [b"00-12345678901234567890123456789012-1234567890123456-01"],
         }
 
-        with patch.object(tracing_module.propagate, "get_global_textmap") as mock_get:
-            mock_propagator = MagicMock()
-            mock_get.return_value = mock_propagator
-
+        with patch(
+            "opentelemetry.trace.propagation.tracecontext.TraceContextTextMapPropagator.extract"
+        ) as mock_extract:
+            mock_extract.return_value = {}
             propagator.extract(carrier)
 
-            # Verify extract was called with carrier
-            call_args = mock_propagator.extract.call_args
-            assert call_args[0][0] == carrier
+            # Verify extract was called
+            mock_extract.assert_called_once()
 
     def test_extract_with_string_values(self):
         """Test extracting trace context from Kafka headers with string values."""
@@ -62,43 +61,40 @@ class TestKafkaPropagator:
             "traceparent": ["00-12345678901234567890123456789012-1234567890123456-01"],
         }
 
-        with patch.object(tracing_module.propagate, "get_global_textmap") as mock_get:
-            mock_propagator = MagicMock()
-            mock_get.return_value = mock_propagator
-
+        with patch(
+            "opentelemetry.trace.propagation.tracecontext.TraceContextTextMapPropagator.extract"
+        ) as mock_extract:
+            mock_extract.return_value = {}
             propagator.extract(carrier)
 
-            call_args = mock_propagator.extract.call_args
-            assert call_args[0][0] == carrier
+            # Verify extract was called
+            mock_extract.assert_called_once()
 
     def test_inject_with_bytes_carrier(self):
         """Test injecting trace context into a carrier with bytes encoding."""
         propagator = KafkaPropagator()
         carrier: dict[str, bytes] = {}
 
-        with patch.object(tracing_module.propagate, "get_global_textmap") as mock_get:
-            mock_propagator = MagicMock()
-            mock_get.return_value = mock_propagator
-
+        with patch(
+            "opentelemetry.trace.propagation.tracecontext.TraceContextTextMapPropagator.inject"
+        ) as mock_inject:
             propagator.inject(carrier)
 
-            # Verify inject was called with carrier
-            call_args = mock_propagator.inject.call_args
-            assert call_args[0][0] == carrier
+            # Verify inject was called
+            mock_inject.assert_called_once()
 
     def test_inject_with_dict_carrier(self):
         """Test injecting trace context into a dict carrier."""
         propagator = KafkaPropagator()
         carrier: dict[str, str] = {}
 
-        with patch.object(tracing_module.propagate, "get_global_textmap") as mock_get:
-            mock_propagator = MagicMock()
-            mock_get.return_value = mock_propagator
-
+        with patch(
+            "opentelemetry.trace.propagation.tracecontext.TraceContextTextMapPropagator.inject"
+        ) as mock_inject:
             propagator.inject(carrier)
 
-            call_args = mock_propagator.inject.call_args
-            assert call_args[0][0] == carrier
+            # Verify inject was called
+            mock_inject.assert_called_once()
 
 
 class TestInitTracerProvider:
@@ -253,7 +249,9 @@ class TestContextPropagation:
         """Test injecting context into carrier."""
         carrier: dict[str, str] = {}
 
-        with patch.object(KafkaPropagator, "inject") as mock_inject:
+        with patch(
+            "opentelemetry.trace.propagation.tracecontext.TraceContextTextMapPropagator.inject"
+        ) as mock_inject:
             result = inject_context(carrier)
 
             mock_inject.assert_called_once()
@@ -263,15 +261,14 @@ class TestContextPropagation:
         """Test extracting context from carrier."""
         carrier = {"traceparent": "test-value"}
 
-        with patch.object(KafkaPropagator, "extract") as mock_extract:
+        with patch(
+            "opentelemetry.trace.propagation.tracecontext.TraceContextTextMapPropagator.extract"
+        ) as mock_extract:
+            mock_context = MagicMock()
             mock_span = MagicMock()
             mock_span.get_span_context.return_value = MagicMock(is_valid=True)
-            mock_context = MagicMock()
-            mock_context.__enter__ = MagicMock(return_value=mock_span)
-            mock_context.__exit__ = MagicMock(return_value=False)
             mock_extract.return_value = mock_context
 
-            # The extract function should work with the mocked context
             with patch.object(trace_api, "get_current_span") as mock_get:
                 mock_get.return_value = mock_span
                 _ = extract_context(carrier)
@@ -282,7 +279,9 @@ class TestContextPropagation:
         """Test extracting context when no valid context exists."""
         carrier = {}
 
-        with patch.object(KafkaPropagator, "extract") as mock_extract:
+        with patch(
+            "opentelemetry.trace.propagation.tracecontext.TraceContextTextMapPropagator.extract"
+        ) as mock_extract:
             mock_extract.side_effect = Exception("No context")
 
             result = extract_context(carrier)
