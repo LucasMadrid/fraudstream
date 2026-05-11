@@ -193,16 +193,17 @@ class TestCrossServiceTraceFlow:
         received_headers = kafka_message["headers"]
 
         # Extract context
-        _ = extract_context(received_headers)
+        extracted_ctx = extract_context(received_headers)
 
-        # Create child span in scoring service
+        # Create child span in scoring service with parent context
         with start_span(
             "scoring.evaluate_rules",
             attributes={
                 "transaction_id": sample_transaction["transaction_id"],
                 "service": "fraudstream-scoring",
             },
-        ) as _:
+            parent_context=extracted_ctx,
+        ):
             scoring_trace_id = get_current_trace_id()
 
             # Trace IDs should match across services
@@ -222,20 +223,22 @@ class TestCrossServiceTraceFlow:
             inject_context(headers)
 
         # Service 2: Processing
-        extract_context(headers)
+        extracted_ctx = extract_context(headers)
         with start_span(
             "processing.enrich_transaction",
             attributes={"service": "fraudstream-processing"},
+            parent_context=extracted_ctx,
         ):
             trace_ids.append(get_current_trace_id())
             headers = {}
             inject_context(headers)
 
         # Service 3: Scoring
-        extract_context(headers)
+        extracted_ctx = extract_context(headers)
         with start_span(
             "scoring.evaluate_transaction",
             attributes={"service": "fraudstream-scoring"},
+            parent_context=extracted_ctx,
         ):
             trace_ids.append(get_current_trace_id())
 

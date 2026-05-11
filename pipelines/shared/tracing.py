@@ -59,15 +59,7 @@ class KafkaPropagator(TextMapPropagator):
         carrier: CarrierT,
         getter: Callable[[CarrierT, str], list[str] | None] | None = None,
     ) -> trace_api.SpanContext:
-        """Extract trace context from Kafka message headers.
-
-        Args:
-            carrier: Dict of Kafka headers (key -> list of values)
-            getter: Optional custom getter function
-
-        Returns:
-            SpanContext with extracted trace information
-        """
+        """Extract trace context from Kafka message headers."""
         if getter is None:
 
             def getter(carrier: CarrierT, key: str) -> list[str] | None:
@@ -78,25 +70,22 @@ class KafkaPropagator(TextMapPropagator):
                     return [v.decode() if isinstance(v, bytes) else v for v in val]
                 return [val.decode() if isinstance(val, bytes) else val]
 
-        return propagate.get_global_textmap().extract(carrier, getter)
+        # Use the standard TraceContextTextMapPropagator for actual extraction
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+        return TraceContextTextMapPropagator().extract(carrier, getter)
 
     def inject(
         self,
         carrier: CarrierT,
-        setter: Callable[[CarrierT, str, str], None] | None = None,
+        context: Any | None = None,
+        setter: Any | None = None,
     ) -> None:
-        """Inject trace context into Kafka message headers.
+        """Inject trace context into Kafka message headers."""
+        # Use the standard TraceContextTextMapPropagator for actual injection
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-        Args:
-            carrier: Dict to inject headers into
-            setter: Optional custom setter function
-        """
-        if setter is None:
-
-            def setter(carrier: CarrierT, key: str, value: str) -> None:
-                carrier[key] = value.encode() if isinstance(carrier, dict) else value
-
-        propagate.get_global_textmap().inject(carrier, setter)
+        TraceContextTextMapPropagator().inject(carrier, context, setter)
 
 
 def setup_kafka_propagation() -> None:
@@ -310,8 +299,9 @@ def inject_context(carrier: dict[str, Any]) -> dict[str, Any]:
     Returns:
         The carrier dict with trace context injected
     """
-    propagator = KafkaPropagator()
-    propagator.inject(carrier)
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+    TraceContextTextMapPropagator().inject(carrier)
     return carrier
 
 
@@ -325,8 +315,9 @@ def extract_context(carrier: dict[str, Any]) -> trace_api.SpanContext | None:
         Extracted SpanContext, or None if no valid context found
     """
     try:
-        propagator = KafkaPropagator()
-        context = propagator.extract(carrier)
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+        context = TraceContextTextMapPropagator().extract(carrier)
         if context:
             span = trace_api.get_current_span(context)
             if span:
