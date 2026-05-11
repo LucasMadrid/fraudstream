@@ -13,12 +13,10 @@ from __future__ import annotations
 
 import os
 import ssl
-import tempfile
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -27,6 +25,9 @@ os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+
+    from confluent_kafka import Consumer, Producer
+    from testcontainers.core.container import DockerContainer
 
 # =============================================================================
 # Paths
@@ -38,6 +39,7 @@ TLS_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "tls"
 # =============================================================================
 # TLS Certificate Fixtures
 # =============================================================================
+
 
 @pytest.fixture(scope="session")
 def tls_certificates() -> dict[str, Path]:
@@ -82,6 +84,7 @@ def ssl_context_tls12(tls_certificates: dict[str, Path]) -> ssl.SSLContext:
 # =============================================================================
 # TLS-Enabled Kafka Testcontainer
 # =============================================================================
+
 
 @dataclass
 class KafkaTLSConfig:
@@ -130,16 +133,16 @@ class KafkaTLSContainer:
         self._container = None
         self._bootstrap_server: str | None = None
 
-    def _create_container(self) -> "DockerContainer":
+    def _create_container(self) -> DockerContainer:
         """Create and configure the Docker container with TLS."""
         from testcontainers.core.container import DockerContainer
-        from testcontainers.core.waiting_utils import wait_for_logs
 
         # Create container
         container = DockerContainer(self.image)
 
         # Generate unique broker ID
         import random
+
         broker_id = random.randint(1000, 9999)
 
         # Configure Kafka with SSL
@@ -148,12 +151,10 @@ class KafkaTLSContainer:
         container.with_env("KAFKA_LISTENERS", "PLAINTEXT://0.0.0.0:9092,SSL://0.0.0.0:9093")
         container.with_env(
             "KAFKA_ADVERTISED_LISTENERS",
-            f"PLAINTEXT://localhost:29092,SSL://localhost:29093",
+            "PLAINTEXT://localhost:29092,SSL://localhost:29093",
         )
         container.with_env("KAFKA_PROCESS_ROLES", "broker,controller")
-        container.with_env(
-            "KAFKA_CONTROLLER_QUORUM_VOTERS", f"{broker_id}@localhost:29093"
-        )
+        container.with_env("KAFKA_CONTROLLER_QUORUM_VOTERS", f"{broker_id}@localhost:29093")
         container.with_env("KAFKA_CONTROLLER_LISTENER_NAMES", "SSL")
         container.with_env("KAFKA_INTER_BROKER_LISTENER_NAME", "PLAINTEXT")
         container.with_env("CLUSTER_ID", "test-cluster-001")
@@ -172,13 +173,14 @@ class KafkaTLSContainer:
 
         return container
 
-    def __enter__(self) -> "KafkaTLSContainer":
+    def __enter__(self) -> KafkaTLSContainer:
         """Start the container and return self."""
         self._container = self._create_container()
         self._container.start()
 
         # Wait for Kafka to be ready
         from testcontainers.core.waiting_utils import wait_for_logs
+
         wait_for_logs(self._container, "Kafka Server started", timeout=60)
 
         # Get bootstrap server
@@ -211,7 +213,9 @@ class KafkaTLSContainer:
 
 
 @pytest.fixture(scope="session")
-def kafka_tls_container(tls_certificates: dict[str, Path]) -> Generator[KafkaTLSContainer, None, None]:
+def kafka_tls_container(
+    tls_certificates: dict[str, Path],
+) -> Generator[KafkaTLSContainer, None, None]:
     """Provide a TLS-enabled Kafka container for the test session.
 
     Yields:
@@ -230,6 +234,7 @@ def kafka_tls_config(kafka_tls_container: KafkaTLSContainer) -> KafkaTLSConfig:
 # =============================================================================
 # SASL/SCRAM Fixtures
 # =============================================================================
+
 
 @dataclass
 class SASLConfig:
@@ -269,12 +274,13 @@ class KafkaSASLContainer:
         self._container = None
         self._bootstrap_server: str | None = None
 
-    def __enter__(self) -> "KafkaSASLContainer":
+    def __enter__(self) -> KafkaSASLContainer:
         """Start the container with SASL configuration."""
+        import random
+
         from testcontainers.core.container import DockerContainer
         from testcontainers.core.waiting_utils import wait_for_logs
 
-        import random
         broker_id = random.randint(1000, 9999)
 
         container = DockerContainer(self.image)
@@ -341,6 +347,7 @@ def kafka_sasl_container() -> Generator[KafkaSASLContainer, None, None]:
 # =============================================================================
 # SecretProvider Protocol and Implementations
 # =============================================================================
+
 
 class SecretProvider(Protocol):
     """Protocol for secret retrieval abstraction.
@@ -449,9 +456,7 @@ class VaultSecretProvider:
             except ImportError:
                 # Fallback to mock for testing without hvac
                 self._client = MagicMock()
-                self._client.secrets.kv.v2.read_secret_version.return_value = {
-                    "data": {"data": {}}
-                }
+                self._client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {}}}
         return self._client
 
     def get_secret(self, path: str, key: str = "value") -> str | None:
@@ -478,6 +483,7 @@ class VaultSecretProvider:
 # =============================================================================
 # SecretProvider Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def env_secret_provider() -> EnvSecretProvider:
@@ -519,11 +525,11 @@ def mock_vault_secret_provider() -> Generator[VaultSecretProvider, None, None]:
     }
 
     provider._client = MagicMock()
-    provider._client.secrets.kv.v2.read_secret_version.side_effect = (
-        lambda path, mount_point=None: {
-            "data": {"data": mock_secrets.get(path, {})}
-        }
-    )
+
+    def _mock_read_secret(path, mount_point=None):
+        return {"data": {"data": mock_secrets.get(path, {})}}
+
+    provider._client.secrets.kv.v2.read_secret_version.side_effect = _mock_read_secret
 
     yield provider
 
@@ -532,7 +538,7 @@ def mock_vault_secret_provider() -> Generator[VaultSecretProvider, None, None]:
 def secret_provider_harness(
     env_secret_provider: EnvSecretProvider,
     mock_vault_secret_provider: VaultSecretProvider,
-) -> "SecretProviderHarness":
+) -> SecretProviderHarness:
     """Provide a test harness for SecretProvider implementations."""
     return SecretProviderHarness(
         env_provider=env_secret_provider,
@@ -582,6 +588,7 @@ class SecretProviderHarness:
 # =============================================================================
 # Management API Auth Fixtures
 # =============================================================================
+
 
 @dataclass
 class APIKeyConfig:
@@ -753,8 +760,9 @@ def strict_auth_harness(
 # Integration Test Helpers
 # =============================================================================
 
+
 @pytest.fixture
-def kafka_ssl_producer(kafka_tls_config: KafkaTLSConfig) -> "Producer":
+def kafka_ssl_producer(kafka_tls_config: KafkaTLSConfig) -> Producer:
     """Create a Kafka producer with SSL configuration.
 
     Yields:
@@ -774,7 +782,7 @@ def kafka_ssl_producer(kafka_tls_config: KafkaTLSConfig) -> "Producer":
 
 
 @pytest.fixture
-def kafka_ssl_consumer(kafka_tls_config: KafkaTLSConfig) -> "Consumer":
+def kafka_ssl_consumer(kafka_tls_config: KafkaTLSConfig) -> Consumer:
     """Create a Kafka consumer with SSL configuration.
 
     Yields:
@@ -792,12 +800,12 @@ def kafka_ssl_consumer(kafka_tls_config: KafkaTLSConfig) -> "Consumer":
 
 
 @pytest.fixture
-def kafka_sasl_producer(kafka_sasl_container: KafkaSASLContainer) -> "Producer":
+def kafka_sasl_producer(kafka_sasl_container: KafkaSASLContainer) -> Producer:
     """Create a Kafka producer with SASL/SCRAM authentication.
 
     Uses the fraudapp user which has full permissions.
     """
-    from confluent_kafka import KafkaException, Producer
+    from confluent_kafka import Producer
 
     sasl_config = kafka_sasl_container.get_sasl_config("fraudapp")
     config = sasl_config.to_client_config(kafka_sasl_container.get_bootstrap_server())
@@ -808,7 +816,7 @@ def kafka_sasl_producer(kafka_sasl_container: KafkaSASLContainer) -> "Producer":
 
 
 @pytest.fixture
-def kafka_sasl_consumer(kafka_sasl_container: KafkaSASLContainer) -> "Consumer":
+def kafka_sasl_consumer(kafka_sasl_container: KafkaSASLContainer) -> Consumer:
     """Create a Kafka consumer with SASL/SCRAM authentication.
 
     Uses the consumer user with read-only permissions.

@@ -8,8 +8,6 @@ st.set_page_config(page_title="Analytics Insights", page_icon="📊", layout="wi
 st.title("📊 Analytics Insights")
 
 try:
-    import pandas as pd
-
     from analytics.queries.analytics_insights import (
         amount_by_decision,
         geo_breakdown,
@@ -23,7 +21,7 @@ except ImportError as e:
     st.error(f"Missing dependency: {e}")
     st.stop()
 
-from analytics.app.widgets import run_query
+from analytics.app.widgets import run_query  # noqa: E402
 
 DECISION_COLORS = {"BLOCK": "#d32f2f", "FLAG": "#f57c00", "ALLOW": "#388e3c"}
 
@@ -32,6 +30,7 @@ def _mask_account(account_id: str) -> str:
     if len(account_id) <= 6:
         return "****"
     return account_id[:4] + "****" + account_id[-2:]
+
 
 # ── Sidebar controls ──────────────────────────────────────────────────────────
 with st.sidebar:

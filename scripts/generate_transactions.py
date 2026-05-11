@@ -26,39 +26,39 @@ import uuid
 # Avoids CDN, hosting, or datacenter ranges that geo-enrichment classifies as HOSTING.
 _PUBLIC_IPS = [
     # US consumer ISPs
-    "24.239.192.1",   # Comcast
-    "71.236.192.1",   # Cox Communications
-    "98.7.32.1",      # AT&T
-    "173.66.172.1",   # Xfinity
-    "108.210.16.1",   # Charter / Spectrum
+    "24.239.192.1",  # Comcast
+    "71.236.192.1",  # Cox Communications
+    "98.7.32.1",  # AT&T
+    "173.66.172.1",  # Xfinity
+    "108.210.16.1",  # Charter / Spectrum
     # EU residential ISPs
-    "80.58.61.250",   # Telefónica / Orange ES
-    "62.214.200.1",   # Deutsche Telekom DE
-    "80.82.0.1",      # Proximus BE
-    "212.54.40.1",    # BT Broadband UK
-    "82.132.0.1",     # Virgin Media UK
+    "80.58.61.250",  # Telefónica / Orange ES
+    "62.214.200.1",  # Deutsche Telekom DE
+    "80.82.0.1",  # Proximus BE
+    "212.54.40.1",  # BT Broadband UK
+    "82.132.0.1",  # Virgin Media UK
     # LATAM
-    "200.172.32.1",   # NET Serviços BR
-    "148.240.0.1",    # TELMEX MX
+    "200.172.32.1",  # NET Serviços BR
+    "148.240.0.1",  # TELMEX MX
     # APAC
-    "203.0.96.1",     # KDDI JP
-    "110.50.0.1",     # NTT Docomo JP
+    "203.0.96.1",  # KDDI JP
+    "110.50.0.1",  # NTT Docomo JP
 ]
 
 # (merchant_id, min_amount, max_amount, weight)
 # Weights control relative transaction frequency; random.choices normalises automatically.
 _MERCHANT_PROFILES: list[tuple[str, float, float, float]] = [
-    ("merch-amazon",      5.00,  280.00, 0.20),  # online retail — most common
-    ("merch-starbucks",   3.50,   14.00, 0.12),  # coffee — high frequency, low value
-    ("merch-uber",        5.00,   48.00, 0.12),  # ride share
-    ("merch-netflix",     8.99,   19.99, 0.10),  # streaming subscription
-    ("merch-spotify",     4.99,   14.99, 0.09),  # music subscription
-    ("merch-walmart",     8.00,  200.00, 0.09),  # retail
-    ("merch-apple",       0.99,  199.00, 0.08),  # app / media store
-    ("merch-shell",      24.00,   75.00, 0.07),  # petrol / gas
-    ("merch-steam",       4.99,   59.99, 0.06),  # PC gaming
-    ("merch-airbnb",     80.00, 2000.00, 0.04),  # accommodation — infrequent, high value
-    ("merch-google",      1.00,   99.00, 0.03),  # Play Store / cloud
+    ("merch-amazon", 5.00, 280.00, 0.20),  # online retail — most common
+    ("merch-starbucks", 3.50, 14.00, 0.12),  # coffee — high frequency, low value
+    ("merch-uber", 5.00, 48.00, 0.12),  # ride share
+    ("merch-netflix", 8.99, 19.99, 0.10),  # streaming subscription
+    ("merch-spotify", 4.99, 14.99, 0.09),  # music subscription
+    ("merch-walmart", 8.00, 200.00, 0.09),  # retail
+    ("merch-apple", 0.99, 199.00, 0.08),  # app / media store
+    ("merch-shell", 24.00, 75.00, 0.07),  # petrol / gas
+    ("merch-steam", 4.99, 59.99, 0.06),  # PC gaming
+    ("merch-airbnb", 80.00, 2000.00, 0.04),  # accommodation — infrequent, high value
+    ("merch-google", 1.00, 99.00, 0.03),  # Play Store / cloud
 ]
 
 _CHANNELS = ["WEB", "MOBILE", "POS", "API"]
@@ -83,10 +83,10 @@ _SUSPICIOUS_ACCOUNTS = ["acc-0001", "acc-0002", "acc-0003", "acc-0004", "acc-000
 # Hosting/datacenter IPs — enrichment classifies these as
 # network_class=HOSTING, the condition for ND-004 (NEW_DEVICE_FOREIGN).
 _HOSTING_IPS = [
-    "52.0.0.1",    # AWS us-east-1
-    "13.64.0.1",   # Azure westus
-    "34.64.0.1",   # GCP us-central1
-    "45.33.0.1",   # Linode (Akamai)
+    "52.0.0.1",  # AWS us-east-1
+    "13.64.0.1",  # Azure westus
+    "34.64.0.1",  # GCP us-central1
+    "45.33.0.1",  # Linode (Akamai)
     "167.99.0.1",  # DigitalOcean
 ]
 

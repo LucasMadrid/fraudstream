@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+
 import fastavro
 from confluent_kafka import Consumer, KafkaException, TopicPartition
 

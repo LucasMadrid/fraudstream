@@ -9,11 +9,8 @@ from __future__ import annotations
 
 import importlib
 import sys
-from unittest import mock
-from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # TB-004-01: All scoring metrics use SafeMetric wrappers
@@ -52,7 +49,8 @@ class TestAllScoringMetricsUseSafeWrappers:
         from pipelines.scoring.safe_metrics import SafeCounter
 
         assert isinstance(feature_store_fallback_total, SafeCounter), (
-            f"feature_store_fallback_total must be SafeCounter, got {type(feature_store_fallback_total)}"
+            f"feature_store_fallback_total must be SafeCounter, "
+            f"got {type(feature_store_fallback_total)}"
         )
 
     def test_feature_store_miss_total_is_safe_counter(self):
@@ -70,16 +68,21 @@ class TestAllScoringMetricsUseSafeWrappers:
         from pipelines.scoring.safe_metrics import SafeHistogram
 
         assert isinstance(feature_store_retrieval_seconds, SafeHistogram), (
-            f"feature_store_retrieval_seconds must be SafeHistogram, got {type(feature_store_retrieval_seconds)}"
+            f"feature_store_retrieval_seconds must be SafeHistogram, "
+            f"got {type(feature_store_retrieval_seconds)}"
         )
 
     def test_feature_materialization_lag_ms_is_safe_gauge(self):
         """TB-004-01f: feature_materialization_lag_ms must be SafeGauge."""
         from pipelines.scoring.metrics import feature_materialization_lag_ms
-        from pipelines.scoring.safe_metrics import SafeGauge
+        from pipelines.scoring.safe_metrics import SafeGauge as ScoringSafeGauge
+        from pipelines.shared.safe_metric import SafeGauge as SharedSafeGauge
 
-        assert isinstance(feature_materialization_lag_ms, SafeGauge), (
-            f"feature_materialization_lag_ms must be SafeGauge, got {type(feature_materialization_lag_ms)}"
+        # Accept either scoring or shared SafeGauge
+        # (both implement same interface)
+        assert isinstance(feature_materialization_lag_ms, (ScoringSafeGauge, SharedSafeGauge)), (
+            f"feature_materialization_lag_ms must be SafeGauge, "
+            f"got {type(feature_materialization_lag_ms)}"
         )
 
     def test_all_scoring_metrics_are_safe_wrapped(self):
@@ -98,7 +101,7 @@ class TestAllScoringMetricsUseSafeWrappers:
             rule_shadow_triggers_total,
             rule_triggers_total,
         )
-        from pipelines.scoring.safe_metrics import SafeCounter, SafeGauge, SafeHistogram
+        from pipelines.scoring.safe_metrics import SafeCounter, SafeHistogram
 
         metrics_to_check = [
             ("rule_evaluations_total", rule_evaluations_total, (SafeCounter,)),
@@ -111,8 +114,16 @@ class TestAllScoringMetricsUseSafeWrappers:
             ("rule_shadow_fp_total", rule_shadow_fp_total, (SafeCounter,)),
             ("rule_triggers_total", rule_triggers_total, (SafeCounter,)),
             ("rule_active_fp_total", rule_active_fp_total, (SafeCounter,)),
-            ("iceberg_decisions_buffer_overflow_total", iceberg_decisions_buffer_overflow_total, (SafeCounter,)),
-            ("iceberg_decisions_catalog_unavailable_total", iceberg_decisions_catalog_unavailable_total, (SafeCounter,)),
+            (
+                "iceberg_decisions_buffer_overflow_total",
+                iceberg_decisions_buffer_overflow_total,
+                (SafeCounter,),
+            ),
+            (
+                "iceberg_decisions_catalog_unavailable_total",
+                iceberg_decisions_catalog_unavailable_total,
+                (SafeCounter,),
+            ),
         ]
 
         for name, metric, expected_types in metrics_to_check:
@@ -150,10 +161,18 @@ class TestNoRawPrometheusCounters:
         )
 
         # None should be raw prometheus types
-        assert not isinstance(rule_evaluations_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram))
-        assert not isinstance(rule_flags_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram))
-        assert not isinstance(feature_store_fallback_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram))
-        assert not isinstance(feature_store_miss_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram))
+        assert not isinstance(
+            rule_evaluations_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram)
+        )
+        assert not isinstance(
+            rule_flags_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram)
+        )
+        assert not isinstance(
+            feature_store_fallback_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram)
+        )
+        assert not isinstance(
+            feature_store_miss_total, (PrometheusCounter, PrometheusGauge, PrometheusHistogram)
+        )
 
 
 # =============================================================================

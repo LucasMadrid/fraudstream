@@ -10,15 +10,14 @@ Verifies that:
 from __future__ import annotations
 
 import inspect
-from typing import get_type_hints
 
 import pytest
 
 from contracts import (
     AlertSinkProtocol,
     FeatureServingProtocol,
-    FraudAlert,
     FeatureVector,
+    FraudAlert,
     InferenceClient,
 )
 
@@ -48,9 +47,9 @@ class TestFeatureServingProtocol:
 
     def test_health_returns_dict(self):
         """health method must return dict."""
-        sig = inspect.signature(FeatureServingProtocol.health)
         # Return type annotation should be dict[str, Any]
         # (we just verify the method exists with proper name)
+        assert hasattr(FeatureServingProtocol, "health")
 
     def test_mock_implementation_satisfies_protocol(self):
         """Mock implementation should satisfy protocol."""
@@ -97,7 +96,6 @@ class TestAlertSinkProtocol:
         # Import here to avoid issues if scoring deps not installed
         try:
             from pipelines.scoring.sinks.alert_postgres import AlertPostgresSink
-            from pipelines.scoring.types import FraudAlert
 
             # We can't instantiate without config, but we can verify the class
             # has the right methods

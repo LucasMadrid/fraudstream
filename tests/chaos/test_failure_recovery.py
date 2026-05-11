@@ -90,10 +90,12 @@ class TestKafkaBrokerFailureRecovery:
         time.sleep(1)
 
         # Produce initial messages
-        producer = Producer({
-            "bootstrap.servers": kafka_bootstrap,
-            "enable.idempotence": True,
-        })
+        producer = Producer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "enable.idempotence": True,
+            }
+        )
 
         for i in range(5):
             producer.produce(topic, key=f"key-{i}", value=f"pre-failure-{i}")
@@ -104,10 +106,12 @@ class TestKafkaBrokerFailureRecovery:
         del producer
 
         # Create new producer (simulates reconnection after failure)
-        producer2 = Producer({
-            "bootstrap.servers": kafka_bootstrap,
-            "enable.idempotence": True,
-        })
+        producer2 = Producer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "enable.idempotence": True,
+            }
+        )
 
         # Produce post-recovery messages
         for i in range(5):
@@ -115,11 +119,13 @@ class TestKafkaBrokerFailureRecovery:
         producer2.flush()
 
         # Consume all messages
-        consumer = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": f"chaos-test-{uuid.uuid4()}",
-            "auto.offset.reset": "earliest",
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": f"chaos-test-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer.subscribe([topic])
 
         received = []
@@ -164,11 +170,13 @@ class TestKafkaBrokerFailureRecovery:
         producer.flush()
 
         # First consumer joins
-        consumer1 = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": "chaos-rebalance-group",
-            "auto.offset.reset": "earliest",
-        })
+        consumer1 = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": "chaos-rebalance-group",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer1.subscribe([topic])
 
         # Consume some messages
@@ -180,11 +188,13 @@ class TestKafkaBrokerFailureRecovery:
                 consumed1.append(msg.value().decode())
 
         # Second consumer joins (triggers rebalance)
-        consumer2 = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": "chaos-rebalance-group",
-            "auto.offset.reset": "earliest",
-        })
+        consumer2 = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": "chaos-rebalance-group",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer2.subscribe([topic])
 
         # Both consume after rebalance
@@ -252,13 +262,15 @@ class TestAlertKafkaSinkRecovery:
 
         # Emit some alerts
         for i in range(5):
-            sink.emit(FraudAlert(
-                transaction_id=f"txn-{i}",
-                account_id="acc-test",
-                matched_rule_names=["VEL-001"],
-                severity="high",
-                evaluation_timestamp=int(time.time() * 1000),
-            ))
+            sink.emit(
+                FraudAlert(
+                    transaction_id=f"txn-{i}",
+                    account_id="acc-test",
+                    matched_rule_names=["VEL-001"],
+                    severity="high",
+                    evaluation_timestamp=int(time.time() * 1000),
+                )
+            )
 
         # Close and reopen (simulates failure/recovery)
         sink.close()
@@ -268,24 +280,28 @@ class TestAlertKafkaSinkRecovery:
 
         # Emit more after "recovery"
         for i in range(5, 10):
-            sink2.emit(FraudAlert(
-                transaction_id=f"txn-{i}",
-                account_id="acc-test",
-                matched_rule_names=["VEL-001"],
-                severity="high",
-                evaluation_timestamp=int(time.time() * 1000),
-            ))
+            sink2.emit(
+                FraudAlert(
+                    transaction_id=f"txn-{i}",
+                    account_id="acc-test",
+                    matched_rule_names=["VEL-001"],
+                    severity="high",
+                    evaluation_timestamp=int(time.time() * 1000),
+                )
+            )
 
         sink2.close()
 
         # Verify all messages delivered
         from confluent_kafka import Consumer
 
-        consumer = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": f"chaos-verify-{uuid.uuid4()}",
-            "auto.offset.reset": "earliest",
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": f"chaos-verify-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer.subscribe([topic])
 
         received = []
@@ -353,13 +369,15 @@ class TestDataDurabilityUnderFailure:
         time.sleep(1)
 
         # Producer with idempotence and retries
-        producer = Producer({
-            "bootstrap.servers": kafka_bootstrap,
-            "enable.idempotence": True,
-            "retries": 10,
-            "retry.backoff.ms": 100,
-            "delivery.timeout.ms": 30000,
-        })
+        producer = Producer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "enable.idempotence": True,
+                "retries": 10,
+                "retry.backoff.ms": 100,
+                "delivery.timeout.ms": 30000,
+            }
+        )
 
         num_messages = 20
         delivered = []
@@ -381,11 +399,13 @@ class TestDataDurabilityUnderFailure:
         producer.flush(timeout=30)
 
         # Consume and verify
-        consumer = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": f"chaos-durable-{uuid.uuid4()}",
-            "auto.offset.reset": "earliest",
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": f"chaos-durable-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer.subscribe([topic])
 
         received = []
@@ -439,11 +459,13 @@ class TestRecoveryTimeObjectives:
         # Consumer starts late (simulates recovery scenario)
         time.sleep(2)
 
-        consumer = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": f"chaos-lag-recovery-{uuid.uuid4()}",
-            "auto.offset.reset": "earliest",
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": f"chaos-lag-recovery-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer.subscribe([topic])
 
         # Measure recovery time

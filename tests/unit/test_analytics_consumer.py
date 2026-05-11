@@ -5,12 +5,15 @@ import re
 from datetime import timezone
 
 UTC = timezone.utc
-from unittest.mock import MagicMock, patch  # patch kept for TestRestartCounter
+from unittest.mock import (  # noqa: E402
+    MagicMock,
+    patch,  # patch kept for TestRestartCounter
+)
 
-import fastavro
-import pytest
+import fastavro  # noqa: E402
+import pytest  # noqa: E402
 
-from analytics.consumers.kafka_consumer import (
+from analytics.consumers.kafka_consumer import (  # noqa: E402
     AnalyticsKafkaConsumer,
     _deserialize,
 )
@@ -80,9 +83,7 @@ class TestDeserialize:
     """Tests for the _deserialize Avro → FraudAlertDisplay conversion."""
 
     def test_maps_fields_correctly(self):
-        raw = _make_avro_bytes(
-            severity="critical", matched_rule_names=["VEL-001", "ND-003"]
-        )
+        raw = _make_avro_bytes(severity="critical", matched_rule_names=["VEL-001", "ND-003"])
         alert = _deserialize(raw)
         assert alert.transaction_id == "txn-001"
         assert alert.account_id == "acc-0042"
@@ -91,12 +92,15 @@ class TestDeserialize:
         assert alert.decision == "BLOCK"
         assert alert.evaluation_timestamp.tzinfo == UTC
 
-    @pytest.mark.parametrize("severity,expected_decision", [
-        ("critical", "BLOCK"),
-        ("high", "BLOCK"),
-        ("medium", "FLAG"),
-        ("low", "ALLOW"),
-    ])
+    @pytest.mark.parametrize(
+        "severity,expected_decision",
+        [
+            ("critical", "BLOCK"),
+            ("high", "BLOCK"),
+            ("medium", "FLAG"),
+            ("low", "ALLOW"),
+        ],
+    )
     def test_severity_to_decision_mapping(self, severity, expected_decision):
         raw = _make_avro_bytes(severity=severity)
         alert = _deserialize(raw)
@@ -164,19 +168,15 @@ class TestRestartCounter:
             if call_count["n"] == 1:
                 mock_c = MagicMock()
                 mock_c.subscribe = MagicMock()
-                mock_c.poll = MagicMock(
-                    side_effect=KE("broker unavailable")
-                )
+                mock_c.poll = MagicMock(side_effect=KE("broker unavailable"))
                 mock_c.close = MagicMock()
                 return mock_c
             consumer._stop_event.set()
             raise RuntimeError("stop")
 
-        target = "analytics.consumers.kafka_consumer.analytics_consumer_restarts_total"
         with patch.object(consumer, "_build_consumer", side_effect=fake_build):
             with patch(
-                "analytics.consumers.kafka_consumer"
-                ".analytics_consumer_restarts_total"
+                "analytics.consumers.kafka_consumer.analytics_consumer_restarts_total"
             ) as mock_ctr:
                 mock_ctr.inc = MagicMock()
                 consumer._run()
@@ -222,6 +222,4 @@ class TestPIIRender:
             alert.model_version,
         ]
         for val in str_fields:
-            assert not self._PAN_RE.search(val), (
-                f"Raw PAN found in field: {val!r}"
-            )
+            assert not self._PAN_RE.search(val), f"Raw PAN found in field: {val!r}"

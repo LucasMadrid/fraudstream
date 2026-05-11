@@ -73,7 +73,7 @@ class FeatureServingProtocol(Protocol):
         account_id: str,
         transaction_id: str,
         transaction_timestamp: int,
-    ) -> "FeatureVector":
+    ) -> FeatureVector:
         """Retrieve feature vector for a transaction.
 
         Must return within 3ms (configurable). On timeout, store outage,
@@ -156,7 +156,7 @@ class AlertSinkProtocol(Protocol):
         >>> sink.close()
     """
 
-    def emit(self, alert: "FraudAlert") -> None:
+    def emit(self, alert: FraudAlert) -> None:
         """Emit a fraud alert to the sink.
 
         Implementations must handle retries and connection management.
@@ -216,7 +216,7 @@ class InferenceClient(Protocol):
 
     def predict(
         self,
-        features: "FeatureVector",
+        features: FeatureVector,
         timeout_ms: int = 50,
     ) -> float:
         """Execute model inference on the provided features.

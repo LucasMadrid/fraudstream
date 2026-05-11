@@ -93,7 +93,11 @@ class TestAvroIcebergFieldAlignment:
             the same data contract.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         iceberg_path = REPO_ROOT / "storage" / "lake" / "schemas" / "enriched_transactions.sql"
 
@@ -112,8 +116,7 @@ class TestAvroIcebergFieldAlignment:
 
         unexpected = avro_only - expected_avro_only
         assert not unexpected, (
-            f"Avro fields missing from Iceberg: {unexpected}. "
-            f"Expected only: {expected_avro_only}"
+            f"Avro fields missing from Iceberg: {unexpected}. Expected only: {expected_avro_only}"
         )
 
     def test_fraud_decisions_fields_match_iceberg(self):
@@ -184,7 +187,11 @@ class TestAvroIcebergTypeMapping:
             Monetary values must not lose precision at boundary crossings.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         iceberg_path = REPO_ROOT / "storage" / "lake" / "schemas" / "enriched_transactions.sql"
 
@@ -222,7 +229,11 @@ class TestAvroIcebergTypeMapping:
             Timestamps must be unambiguous at all boundaries.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         iceberg_path = REPO_ROOT / "storage" / "lake" / "schemas" / "enriched_transactions.sql"
 
@@ -261,7 +272,11 @@ class TestAvroIcebergTypeMapping:
         String fields must be compatible.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         iceberg_path = REPO_ROOT / "storage" / "lake" / "schemas" / "enriched_transactions.sql"
 
@@ -289,9 +304,7 @@ class TestAvroIcebergTypeMapping:
 
             if field_name in iceberg_cols:
                 iceberg_type = iceberg_cols[field_name]["type"]
-                assert "string" in iceberg_type.lower(), (
-                    f"{field_name} must be string in Iceberg"
-                )
+                assert "string" in iceberg_type.lower(), f"{field_name} must be string in Iceberg"
 
 
 class TestKafkaPartitionStrategy:
@@ -310,7 +323,11 @@ class TestKafkaPartitionStrategy:
             Partition keys must align with access patterns.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         schema = _load_json(avro_path)
 
@@ -333,7 +350,11 @@ class TestKafkaPartitionStrategy:
         """
         # Check enriched schema
         enriched_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         enriched_schema = _load_json(enriched_path)
 
@@ -358,7 +379,11 @@ class TestKafkaPartitionStrategy:
             Deduplication keys must be stable across topics.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         schema = _load_json(avro_path)
 
@@ -386,7 +411,11 @@ class TestNullabilityAlignment:
         Fields marked NOT NULL in Iceberg must be non-nullable in Avro.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         iceberg_path = REPO_ROOT / "storage" / "lake" / "schemas" / "enriched_transactions.sql"
 
@@ -412,9 +441,7 @@ class TestNullabilityAlignment:
 
             # If Iceberg is NOT NULL, Avro must be non-nullable
             if not is_iceberg_nullable and is_avro_nullable:
-                mismatches.append(
-                    f"{field_name}: Iceberg NOT NULL but Avro nullable"
-                )
+                mismatches.append(f"{field_name}: Iceberg NOT NULL but Avro nullable")
 
         assert not mismatches, "Nullability mismatches:\n" + "\n".join(mismatches)
 
@@ -431,7 +458,11 @@ class TestSchemaVersioningAcrossBoundaries:
         Schema version field allows consumers to handle schema evolution.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         schema = _load_json(avro_path)
 
@@ -450,9 +481,7 @@ class TestSchemaVersioningAcrossBoundaries:
 
         iceberg_cols = _parse_iceberg_ddl(iceberg_path)
 
-        assert "schema_version" in iceberg_cols, (
-            "schema_version must be in Iceberg schema"
-        )
+        assert "schema_version" in iceberg_cols, "schema_version must be in Iceberg schema"
 
 
 class TestDataLineageFields:
@@ -467,7 +496,11 @@ class TestDataLineageFields:
         Version tracking allows correlation of data issues with code versions.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         schema = _load_json(avro_path)
 
@@ -483,7 +516,11 @@ class TestDataLineageFields:
         Processing latency must be measurable for performance monitoring.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         iceberg_path = REPO_ROOT / "storage" / "lake" / "schemas" / "enriched_transactions.sql"
 
@@ -498,9 +535,7 @@ class TestDataLineageFields:
         # Check Iceberg
         if iceberg_path.exists():
             iceberg_cols = _parse_iceberg_ddl(iceberg_path)
-            assert "enrichment_time" in iceberg_cols, (
-                "enrichment_time missing from Iceberg"
-            )
+            assert "enrichment_time" in iceberg_cols, "enrichment_time missing from Iceberg"
 
 
 class TestCrossBoundaryContractIntegration:
@@ -512,7 +547,11 @@ class TestCrossBoundaryContractIntegration:
         Data loss prevention: fields used for business logic must be persisted.
         """
         avro_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "enriched-txn-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "enriched-txn-v1.avsc"
         )
         iceberg_path = REPO_ROOT / "storage" / "lake" / "schemas" / "enriched_transactions.sql"
 
@@ -543,6 +582,4 @@ class TestCrossBoundaryContractIntegration:
 
         # All critical fields must be in Iceberg
         missing_iceberg = critical_fields - set(iceberg_cols.keys())
-        assert not missing_iceberg, (
-            f"Critical fields missing from Iceberg: {missing_iceberg}"
-        )
+        assert not missing_iceberg, f"Critical fields missing from Iceberg: {missing_iceberg}"

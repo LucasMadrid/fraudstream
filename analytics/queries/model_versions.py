@@ -26,9 +26,7 @@ _EMPTY_DAILY_COLS = [
 ]
 
 
-def model_version_summary(
-    days: int = 30, *, reader: IcebergReader | None = None
-) -> pd.DataFrame:
+def model_version_summary(days: int = 30, *, reader: IcebergReader | None = None) -> pd.DataFrame:
     """Aggregated metrics by model version: score and latency percentiles.
 
     Args:

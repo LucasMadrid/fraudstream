@@ -73,8 +73,14 @@ _TIMESTAMP_MS_FIELDS = frozenset(
     {"event_time", "enrichment_time", "device_first_seen", "prev_txn_time_ms"}
 )
 _INT_FIELDS = frozenset(
-    {"vel_count_1m", "vel_count_5m", "vel_count_1h", "vel_count_24h", "device_txn_count",
-     "enrichment_latency_ms"}
+    {
+        "vel_count_1m",
+        "vel_count_5m",
+        "vel_count_1h",
+        "vel_count_24h",
+        "device_txn_count",
+        "enrichment_latency_ms",
+    }
 )
 _FLOAT_FIELDS = frozenset({"geo_lat", "geo_lon", "geo_confidence"})
 
@@ -132,7 +138,9 @@ class IcebergEnrichedSink(_IcebergSinkBase):
         except ImportError:
             logger.debug("Feast not installed; skipping feature materialization")
         except Exception as exc:
-            logger.debug("Could not initialize Feast store: %s; skipping feature materialization", exc)
+            logger.debug(
+                "Could not initialize Feast store: %s; skipping feature materialization", exc
+            )
 
     def _on_buffer_overflow(self) -> None:
         iceberg_buffer_overflow_total.inc()
@@ -151,4 +159,3 @@ class IcebergEnrichedSink(_IcebergSinkBase):
 
     def _records_to_arrow_table(self, records: list[dict]) -> pa.Table:
         return build_arrow_table(_ENRICHED_SCHEMA, records, _coerce_enriched)
-

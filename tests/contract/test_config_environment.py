@@ -18,10 +18,9 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -227,9 +226,7 @@ class TestConfigurationDocumentation:
         assert "SASL_SSL" in content, "client.properties must document SASL_SSL"
 
         # Should mention security.protocol
-        assert "security.protocol" in content, (
-            "client.properties must mention security.protocol"
-        )
+        assert "security.protocol" in content, "client.properties must mention security.protocol"
 
     def test_docker_compose_security_configured(self):
         """TB-002-CFG-09: Docker compose configures SASL_SSL listener.
@@ -383,8 +380,7 @@ class TestKafkaClientProperties:
 
         # At least 2 protocols should be mentioned
         assert found_protocols >= 2, (
-            f"client.properties should document security protocols. "
-            f"Found: {found_protocols}"
+            f"client.properties should document security protocols. Found: {found_protocols}"
         )
 
     def test_sasl_mechanisms_documented(self):

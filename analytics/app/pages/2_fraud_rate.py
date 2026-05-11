@@ -13,7 +13,7 @@ except ImportError as e:
     st.error(f"Missing dependency: {e}")
     st.stop()
 
-from analytics.app.widgets import run_query
+from analytics.app.widgets import run_query  # noqa: E402
 
 days = st.sidebar.slider("Lookback (days)", min_value=1, max_value=90, value=30)
 

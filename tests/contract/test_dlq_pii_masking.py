@@ -52,20 +52,20 @@ class TestDlqSchemaPiiTracking:
             PII presence must be explicit for audit and compliance.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "001-kafka-ingestion-pipeline" / "contracts" / "dlq-envelope-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "001-kafka-ingestion-pipeline"
+            / "contracts"
+            / "dlq-envelope-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
         field_names = {f["name"]: f for f in schema.get("fields", [])}
 
-        assert "masking_applied" in field_names, (
-            "DLQ envelope must have masking_applied field"
-        )
+        assert "masking_applied" in field_names, "DLQ envelope must have masking_applied field"
 
         masking_field = field_names["masking_applied"]
-        assert masking_field.get("type") == "boolean", (
-            "masking_applied must be boolean type"
-        )
+        assert masking_field.get("type") == "boolean", "masking_applied must be boolean type"
 
     def test_dlq_envelope_masking_field_documented(self):
         """TB-002-DLQ-02: masking_applied field must have security documentation.
@@ -77,7 +77,11 @@ class TestDlqSchemaPiiTracking:
             Security-critical fields must have explicit documentation.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "001-kafka-ingestion-pipeline" / "contracts" / "dlq-envelope-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "001-kafka-ingestion-pipeline"
+            / "contracts"
+            / "dlq-envelope-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -91,10 +95,9 @@ class TestDlqSchemaPiiTracking:
         assert doc, "masking_applied must have documentation"
 
         # Documentation should mention PII or sensitivity
-        assert any(
-            keyword in doc.lower()
-            for keyword in ["pii", "sensitive", "mask", "warning"]
-        ), f"masking_applied doc must mention PII/sensitivity: {doc}"
+        assert any(keyword in doc.lower() for keyword in ["pii", "sensitive", "mask", "warning"]), (
+            f"masking_applied doc must mention PII/sensitivity: {doc}"
+        )
 
     def test_dlq_envelope_original_payload_documented(self):
         """TB-002-DLQ-03: original_payload field must have PII warning in docs.
@@ -106,7 +109,11 @@ class TestDlqSchemaPiiTracking:
             Operators must be warned about potential PII exposure.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "001-kafka-ingestion-pipeline" / "contracts" / "dlq-envelope-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "001-kafka-ingestion-pipeline"
+            / "contracts"
+            / "dlq-envelope-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -119,8 +126,7 @@ class TestDlqSchemaPiiTracking:
         doc = payload_field.get("doc", "")
         # Should mention PII, sensitive, or masking
         assert any(
-            keyword in doc.lower()
-            for keyword in ["pii", "sensitive", "mask", "unmasked"]
+            keyword in doc.lower() for keyword in ["pii", "sensitive", "mask", "unmasked"]
         ), f"original_payload doc must warn about PII: {doc}"
 
 
@@ -147,6 +153,7 @@ class TestDlqProducerPiiHandling:
 
         # Check that send_to_dlq accepts masking_applied parameter
         import inspect
+
         sig = inspect.signature(DLQProducer.send_to_dlq)
         params = list(sig.parameters.keys())
 
@@ -171,7 +178,9 @@ class TestDlqProducerPiiHandling:
 
             # Capture the call arguments
             produced_records = []
-            mock_producer_instance.produce.side_effect = lambda **kwargs: produced_records.append(kwargs)
+            mock_producer_instance.produce.side_effect = lambda **kwargs: produced_records.append(
+                kwargs
+            )
 
             producer = DLQProducer(bootstrap_servers="localhost:9092")
 
@@ -212,7 +221,9 @@ class TestDlqProducerPiiHandling:
 
             # Capture the call arguments
             produced_records = []
-            mock_producer_instance.produce.side_effect = lambda **kwargs: produced_records.append(kwargs)
+            mock_producer_instance.produce.side_effect = lambda **kwargs: produced_records.append(
+                kwargs
+            )
 
             producer = DLQProducer(bootstrap_servers="localhost:9092")
 
@@ -253,7 +264,11 @@ class TestDlqErrorMessagePiiScrubbing:
         # This is a contract specification - implementations should validate
         # We check the schema allows for error messages without validation
         schema_path = (
-            REPO_ROOT / "specs" / "001-kafka-ingestion-pipeline" / "contracts" / "dlq-envelope-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "001-kafka-ingestion-pipeline"
+            / "contracts"
+            / "dlq-envelope-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -274,7 +289,11 @@ class TestDlqErrorMessagePiiScrubbing:
         that could include PII.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "001-kafka-ingestion-pipeline" / "contracts" / "dlq-envelope-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "001-kafka-ingestion-pipeline"
+            / "contracts"
+            / "dlq-envelope-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -302,7 +321,11 @@ class TestDlqProcessingPiiHandling:
             Raw payloads should be stored as opaque bytes.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "processing-dlq-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "processing-dlq-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -322,7 +345,11 @@ class TestDlqProcessingPiiHandling:
         correlation with the original event for debugging.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "processing-dlq-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "processing-dlq-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -354,8 +381,9 @@ class TestDlqSinkProtocolPii:
         Constitution (Article 3 - Dependency Inversion):
             Protocol abstracts PII handling details from callers.
         """
-        from pipelines.shared.dlq_protocol import DLQSink
         import inspect
+
+        from pipelines.shared.dlq_protocol import DLQSink
 
         sig = inspect.signature(DLQSink.send)
         params = list(sig.parameters.keys())
@@ -396,11 +424,13 @@ class TestDlqSinkProtocolPii:
             ) -> None:
                 # Implementation can infer PII state from context
                 has_pii = self._check_for_pii(original_payload)
-                self.records.append({
-                    "source_topic": source_topic,
-                    "has_pii": has_pii,
-                    "error_type": error_type,
-                })
+                self.records.append(
+                    {
+                        "source_topic": source_topic,
+                        "has_pii": has_pii,
+                        "error_type": error_type,
+                    }
+                )
 
             def _check_for_pii(self, payload: bytes) -> bool:
                 """Heuristic to detect potential PII in payload."""
@@ -439,7 +469,11 @@ class TestDlqRecordRetention:
             DLQ records must be traceable to source.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "001-kafka-ingestion-pipeline" / "contracts" / "dlq-envelope-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "001-kafka-ingestion-pipeline"
+            / "contracts"
+            / "dlq-envelope-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -452,7 +486,11 @@ class TestDlqRecordRetention:
         Detailed tracking for distributed processing debugging.
         """
         schema_path = (
-            REPO_ROOT / "specs" / "002-flink-stream-processor" / "contracts" / "processing-dlq-v1.avsc"
+            REPO_ROOT
+            / "specs"
+            / "002-flink-stream-processor"
+            / "contracts"
+            / "processing-dlq-v1.avsc"
         )
         schema = _load_schema(schema_path)
 
@@ -479,15 +517,14 @@ class TestDlqContractIntegration:
             pytest.skip(f"Dependencies not available: {e}")
 
         import sys
+
         if "confluent_kafka" not in sys.modules:
             sys.modules["confluent_kafka"] = MagicMock()
 
         with patch("confluent_kafka.Producer"):
             producer = DLQProducer(bootstrap_servers="localhost:9092")
 
-        assert isinstance(producer, DLQSink), (
-            "DLQProducer must satisfy DLQSink protocol"
-        )
+        assert isinstance(producer, DLQSink), "DLQProducer must satisfy DLQSink protocol"
 
     def test_processing_dlq_satisfies_dlq_sink_protocol(self):
         """TB-002-DLQ-16: Processing DLQSink satisfies DLQSink protocol.
@@ -501,12 +538,11 @@ class TestDlqContractIntegration:
             pytest.skip(f"Dependencies not available: {e}")
 
         import sys
+
         if "confluent_kafka" not in sys.modules:
             sys.modules["confluent_kafka"] = MagicMock()
 
         with patch("confluent_kafka.Producer"):
             sink = ProcessingDLQSink(bootstrap_servers="localhost:9092")
 
-        assert isinstance(sink, DLQSink), (
-            "ProcessingDLQSink must satisfy DLQSink protocol"
-        )
+        assert isinstance(sink, DLQSink), "ProcessingDLQSink must satisfy DLQSink protocol"

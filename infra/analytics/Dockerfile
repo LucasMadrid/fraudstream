@@ -25,8 +25,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY analytics/ ./analytics/
 COPY pipelines/ ./pipelines/
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-build-isolation --no-deps .
+# Skip pip install - use PYTHONPATH instead for faster build
+ENV PYTHONPATH=/opt/app:$PYTHONPATH
 
 # ============================================================================
 # RUNTIME STAGE — minimal final image, no build tools

@@ -25,11 +25,15 @@ if TYPE_CHECKING:
     from confluent_kafka import Consumer, Producer
 
     from tests.integration.conftest_security import (
+        APIKeyConfig,
+        EnvSecretProvider,
         KafkaSASLContainer,
         KafkaTLSConfig,
         KafkaTLSContainer,
         ManagementAPIAuthHarness,
+        RateLimitConfig,
         SecretProviderHarness,
+        VaultSecretProvider,
     )
 
 
@@ -56,9 +60,7 @@ class TestTLSKafkaConnection:
         """Verify TLS configuration includes certificate paths."""
         assert kafka_tls_config.security_protocol == "SSL"
         assert kafka_tls_config.ssl_ca_location == str(tls_certificates["ca_cert"])
-        assert kafka_tls_config.ssl_certificate_location == str(
-            tls_certificates["client_cert"]
-        )
+        assert kafka_tls_config.ssl_certificate_location == str(tls_certificates["client_cert"])
         assert kafka_tls_config.ssl_key_location == str(tls_certificates["client_key"])
 
     def test_ssl_producer_connects(
@@ -167,11 +169,15 @@ class TestSASLTLSAuthentication:
 
         # Should get authentication failure
         error = exc_info.value.args[0]
-        assert error.code() in [
-            KafkaError._AUTHENTICATION,
-            KafkaError._SSL,
-            KafkaError._TRANSPORT,
-        ] or "authentication" in str(error).lower()
+        assert (
+            error.code()
+            in [
+                KafkaError._AUTHENTICATION,
+                KafkaError._SSL,
+                KafkaError._TRANSPORT,
+            ]
+            or "authentication" in str(error).lower()
+        )
 
 
 # =============================================================================
@@ -184,7 +190,7 @@ class TestEnvSecretProvider:
 
     def test_get_secret_from_env(
         self,
-        env_secret_provider: "EnvSecretProvider",
+        env_secret_provider: EnvSecretProvider,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test reading secrets from environment variables."""
@@ -195,7 +201,7 @@ class TestEnvSecretProvider:
 
     def test_get_secret_missing_returns_none(
         self,
-        env_secret_provider: "EnvSecretProvider",
+        env_secret_provider: EnvSecretProvider,
     ) -> None:
         """Test that missing secrets return None."""
         result = env_secret_provider.get_secret("NONEXISTENT_VAR")
@@ -203,7 +209,7 @@ class TestEnvSecretProvider:
 
     def test_prefixed_provider(
         self,
-        prefixed_env_provider: "EnvSecretProvider",
+        prefixed_env_provider: EnvSecretProvider,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test that prefix is applied correctly."""
@@ -214,7 +220,7 @@ class TestEnvSecretProvider:
 
     def test_required_secret_raises_when_missing(
         self,
-        env_secret_provider: "EnvSecretProvider",
+        env_secret_provider: EnvSecretProvider,
     ) -> None:
         """Test that required secrets raise exception when missing."""
         from tests.integration.conftest_security import SecretNotFoundError
@@ -230,7 +236,7 @@ class TestVaultSecretProvider:
 
     def test_get_secret_from_vault(
         self,
-        mock_vault_secret_provider: "VaultSecretProvider",
+        mock_vault_secret_provider: VaultSecretProvider,
     ) -> None:
         """Test reading secrets from Vault."""
         result = mock_vault_secret_provider.get_secret("fraudstream/kafka", "username")
@@ -238,7 +244,7 @@ class TestVaultSecretProvider:
 
     def test_get_different_secret_keys(
         self,
-        mock_vault_secret_provider: "VaultSecretProvider",
+        mock_vault_secret_provider: VaultSecretProvider,
     ) -> None:
         """Test reading different keys from the same secret path."""
         password = mock_vault_secret_provider.get_secret("fraudstream/kafka", "password")
@@ -246,7 +252,7 @@ class TestVaultSecretProvider:
 
     def test_missing_path_returns_none(
         self,
-        mock_vault_secret_provider: "VaultSecretProvider",
+        mock_vault_secret_provider: VaultSecretProvider,
     ) -> None:
         """Test that non-existent paths return None."""
         result = mock_vault_secret_provider.get_secret("nonexistent/path", "key")
@@ -316,8 +322,8 @@ class TestManagementAPIKeyValidation:
 
     def test_dev_mode_accepts_any_key(
         self,
-        dev_api_key_config: "APIKeyConfig",
-        rate_limit_config: "RateLimitConfig",
+        dev_api_key_config: APIKeyConfig,
+        rate_limit_config: RateLimitConfig,
     ) -> None:
         """Test that dev mode accepts any non-empty key."""
         from tests.integration.conftest_security import ManagementAPIAuthHarness
@@ -329,8 +335,8 @@ class TestManagementAPIKeyValidation:
 
     def test_dev_mode_optional_auth(
         self,
-        dev_api_key_config: "APIKeyConfig",
-        rate_limit_config: "RateLimitConfig",
+        dev_api_key_config: APIKeyConfig,
+        rate_limit_config: RateLimitConfig,
     ) -> None:
         """Test that dev mode allows requests without auth."""
         from tests.integration.conftest_security import ManagementAPIAuthHarness
@@ -356,7 +362,7 @@ class TestManagementAPIRateLimiting:
                 api_key="test-key-123",
                 client_ip="127.0.0.1",
             )
-            assert result["rate_limited"] is False, f"Request {i+1} should not be rate limited"
+            assert result["rate_limited"] is False, f"Request {i + 1} should not be rate limited"
 
     def test_rate_limit_enforced(
         self,
@@ -503,8 +509,8 @@ class TestSecuritySmokeTests:
         kafka_tls_container: KafkaTLSContainer,
         kafka_sasl_container: KafkaSASLContainer,
         tls_certificates: dict[str, Path],
-        env_secret_provider: "EnvSecretProvider",
-        mock_vault_secret_provider: "VaultSecretProvider",
+        env_secret_provider: EnvSecretProvider,
+        mock_vault_secret_provider: VaultSecretProvider,
         auth_harness: ManagementAPIAuthHarness,
     ) -> None:
         """Verify all security fixtures are available and functional."""

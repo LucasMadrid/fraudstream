@@ -1,0 +1,16 @@
+# Exclude tests and build artifacts from source distribution
+exclude MANIFEST.in
+exclude Makefile
+recursive-exclude tests *
+recursive-exclude .git *
+recursive-exclude __pycache__ *
+recursive-exclude *.egg-info *
+recursive-exclude .pytest_cache *
+recursive-exclude .ruff_cache *
+recursive-exclude .mypy_cache *
+
+# Include only necessary package files
+include pyproject.toml
+include README.md
+recursive-include pipelines *.py
+recursive-include analytics *.py

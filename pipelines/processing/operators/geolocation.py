@@ -16,9 +16,11 @@ logger = logging.getLogger(__name__)
 
 def _make_cached_lookup(reader):
     """Return an LRU-cached closure over a specific GeoIP reader instance."""
+
     @functools.lru_cache(maxsize=10_000)
     def _lookup(subnet_str: str) -> dict:
         return _do_lookup(reader, subnet_str)
+
     return _lookup
 
 

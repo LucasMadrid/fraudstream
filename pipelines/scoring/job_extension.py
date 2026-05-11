@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from pipelines.scoring.types import FeatureServingProtocol, FraudDecision
+from pipelines.scoring.types import FeatureServingProtocol, FraudAlert, FraudDecision
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +47,8 @@ class _FeatureEnrichmentFunction:
             self._client.close()
 
 
-def _build_fraud_alert(txn: dict, result) -> "FraudAlert | None":
+def _build_fraud_alert(txn: dict, result) -> FraudAlert | None:
     """Return a FraudAlert for suspicious results, None for clean ones."""
-    from pipelines.scoring.types import FraudAlert
-
     if result.determination != "suspicious":
         return None
     return FraudAlert(
@@ -121,9 +119,7 @@ try:  # pragma: no cover
             try:
                 self._pg_sink.open()
             except Exception as exc:
-                logger.warning(
-                    "PostgreSQL sink unavailable — alerts will be Kafka-only: %s", exc
-                )
+                logger.warning("PostgreSQL sink unavailable — alerts will be Kafka-only: %s", exc)
                 self._pg_sink = None
 
         def map(self, value):

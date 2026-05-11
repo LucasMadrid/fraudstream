@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import fastavro
 from fastavro.schema import parse_schema
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -153,9 +152,7 @@ class TestBackwardTransitiveCompatibility:
             None,
         )
         assert account_id_field is not None, "account_id field missing from schema"
-        assert not _is_nullable(account_id_field), (
-            "account_id must be non-nullable (partition key)"
-        )
+        assert not _is_nullable(account_id_field), "account_id must be non-nullable (partition key)"
 
     def test_enriched_txn_transaction_id_non_nullable(self):
         """TB-002-SE-04: transaction_id must be non-nullable (deduplication key).
@@ -208,9 +205,7 @@ class TestProcessingDlqSchemaEvolution:
             if _is_nullable(field):
                 default_val = _get_field_default(field)
                 if default_val is not None:
-                    violations.append(
-                        f"{field['name']}: nullable field must have default=null"
-                    )
+                    violations.append(f"{field['name']}: nullable field must have default=null")
 
         assert not violations, "DLQ schema violations:\n" + "\n".join(violations)
 
@@ -255,9 +250,7 @@ class TestFraudAlertSchemaEvolution:
         Constitution (Article 5 - Fail-Safe):
             Alert schema must not break downstream consumers.
         """
-        schema_path = (
-            SCHEMAS_DIR / "003-fraud-rule-engine" / "contracts" / "fraud-alert-v1.avsc"
-        )
+        schema_path = SCHEMAS_DIR / "003-fraud-rule-engine" / "contracts" / "fraud-alert-v1.avsc"
         # Schema may not exist yet in all branches
         if not schema_path.exists():
             pytest.skip(f"Schema not found: {schema_path}")
@@ -269,9 +262,7 @@ class TestFraudAlertSchemaEvolution:
             if _is_nullable(field):
                 default_val = _get_field_default(field)
                 if default_val is not None:
-                    violations.append(
-                        f"{field['name']}: nullable field must have default=null"
-                    )
+                    violations.append(f"{field['name']}: nullable field must have default=null")
 
         assert not violations, "Alert schema violations:\n" + "\n".join(violations)
 
@@ -296,7 +287,13 @@ class TestSchemaTypeCompatibility:
         )
         schema = _load_schema(schema_path)
 
-        decimal_fields = ["amount", "vel_amount_1m", "vel_amount_5m", "vel_amount_1h", "vel_amount_24h"]
+        decimal_fields = [
+            "amount",
+            "vel_amount_1m",
+            "vel_amount_5m",
+            "vel_amount_1h",
+            "vel_amount_24h",
+        ]
 
         for field_name in decimal_fields:
             field = next(
@@ -311,12 +308,8 @@ class TestSchemaTypeCompatibility:
             assert field_type.get("logicalType") == "decimal", (
                 f"{field_name} must have decimal logicalType"
             )
-            assert field_type.get("precision") == 18, (
-                f"{field_name} must have precision=18"
-            )
-            assert field_type.get("scale") == 4, (
-                f"{field_name} must have scale=4"
-            )
+            assert field_type.get("precision") == 18, f"{field_name} must have precision=18"
+            assert field_type.get("scale") == 4, f"{field_name} must have scale=4"
 
     def test_timestamp_logical_type_consistency(self):
         """TB-002-SE-09: Timestamp fields must use timestamp-millis logicalType.

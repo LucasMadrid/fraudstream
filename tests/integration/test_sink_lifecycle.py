@@ -24,7 +24,6 @@ from testcontainers.kafka import KafkaContainer  # type: ignore[import]
 from pipelines.scoring.config import ScoringConfig
 from pipelines.scoring.types import FraudAlert
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -73,7 +72,9 @@ class TestAlertKafkaSinkCloseFlushing:
     """
 
     @pytest.mark.integration
-    def test_close_flushes_pending_messages(self, scoring_config: ScoringConfig, kafka_bootstrap: str):
+    def test_close_flushes_pending_messages(
+        self, scoring_config: ScoringConfig, kafka_bootstrap: str
+    ):
         """TB-006-01a: close() must flush all pending messages to Kafka.
 
         Emit alerts, call close(), verify all messages are delivered.
@@ -85,9 +86,9 @@ class TestAlertKafkaSinkCloseFlushing:
 
         # Create topic
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
-        admin.create_topics([
-            NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)
-        ])
+        admin.create_topics(
+            [NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)]
+        )
         time.sleep(1)
 
         # Create and open sink
@@ -104,11 +105,13 @@ class TestAlertKafkaSinkCloseFlushing:
         sink.close()
 
         # Consume and verify all messages delivered
-        consumer = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": f"test-close-flush-{uuid.uuid4()}",
-            "auto.offset.reset": "earliest",
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": f"test-close-flush-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer.subscribe([scoring_config.fraud_alerts_topic])
 
         received = []
@@ -136,9 +139,9 @@ class TestAlertKafkaSinkCloseFlushing:
 
         # Create topic
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
-        admin.create_topics([
-            NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)
-        ])
+        admin.create_topics(
+            [NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)]
+        )
         time.sleep(1)
 
         sink = AlertKafkaSink(scoring_config)
@@ -168,7 +171,9 @@ class TestNoMessageLossOnShutdown:
     """
 
     @pytest.mark.integration
-    def test_all_messages_delivered_before_close_returns(self, scoring_config: ScoringConfig, kafka_bootstrap: str):
+    def test_all_messages_delivered_before_close_returns(
+        self, scoring_config: ScoringConfig, kafka_bootstrap: str
+    ):
         """TB-006-02a: All emitted messages must be delivered before close() returns.
 
         This ensures no async messages are lost during shutdown.
@@ -180,17 +185,19 @@ class TestNoMessageLossOnShutdown:
 
         # Create topic
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
-        admin.create_topics([
-            NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)
-        ])
+        admin.create_topics(
+            [NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)]
+        )
         time.sleep(1)
 
         # Setup consumer before emitting
-        consumer = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": f"test-no-loss-{uuid.uuid4()}",
-            "auto.offset.reset": "earliest",
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": f"test-no-loss-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer.subscribe([scoring_config.fraud_alerts_topic])
 
         # Create and use sink
@@ -219,21 +226,23 @@ class TestNoMessageLossOnShutdown:
         )
 
     @pytest.mark.integration
-    def test_flush_explicitly_called_before_close(self, scoring_config: ScoringConfig, kafka_bootstrap: str):
+    def test_flush_explicitly_called_before_close(
+        self, scoring_config: ScoringConfig, kafka_bootstrap: str
+    ):
         """TB-006-02b: flush() should be called explicitly before producer cleanup.
 
         Ensures the flush mechanism works correctly.
         """
+
         from confluent_kafka.admin import AdminClient, NewTopic
-        from unittest.mock import patch
 
         from pipelines.scoring.sinks.alert_kafka import AlertKafkaSink
 
         # Create topic
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
-        admin.create_topics([
-            NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)
-        ])
+        admin.create_topics(
+            [NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)]
+        )
         time.sleep(1)
 
         sink = AlertKafkaSink(scoring_config)
@@ -269,7 +278,9 @@ class TestProducerResourceCleanup:
     """
 
     @pytest.mark.integration
-    def test_producer_set_to_none_after_close(self, scoring_config: ScoringConfig, kafka_bootstrap: str):
+    def test_producer_set_to_none_after_close(
+        self, scoring_config: ScoringConfig, kafka_bootstrap: str
+    ):
         """TB-006-03a: Producer reference should be cleared after close().
 
         Prevents use-after-close errors.
@@ -280,9 +291,9 @@ class TestProducerResourceCleanup:
 
         # Create topic
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
-        admin.create_topics([
-            NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)
-        ])
+        admin.create_topics(
+            [NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)]
+        )
         time.sleep(1)
 
         sink = AlertKafkaSink(scoring_config)
@@ -295,7 +306,9 @@ class TestProducerResourceCleanup:
         assert sink._producer is None, "Producer should be None after close()"
 
     @pytest.mark.integration
-    def test_emit_after_close_raises_error(self, scoring_config: ScoringConfig, kafka_bootstrap: str):
+    def test_emit_after_close_raises_error(
+        self, scoring_config: ScoringConfig, kafka_bootstrap: str
+    ):
         """TB-006-03b: emit() after close() should raise RuntimeError.
 
         Prevents silent message loss from using closed sink.
@@ -306,9 +319,9 @@ class TestProducerResourceCleanup:
 
         # Create topic
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
-        admin.create_topics([
-            NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)
-        ])
+        admin.create_topics(
+            [NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)]
+        )
         time.sleep(1)
 
         sink = AlertKafkaSink(scoring_config)
@@ -346,8 +359,7 @@ class TestDLQHandlingDuringShutdown:
 
 
 class TestHighVolumeShutdown:
-    """TB-006-05: Verify no message loss under high volume.
-    """
+    """TB-006-05: Verify no message loss under high volume."""
 
     @pytest.mark.integration
     @pytest.mark.slow
@@ -363,9 +375,9 @@ class TestHighVolumeShutdown:
 
         # Create topic
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
-        admin.create_topics([
-            NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)
-        ])
+        admin.create_topics(
+            [NewTopic(scoring_config.fraud_alerts_topic, num_partitions=1, replication_factor=1)]
+        )
         time.sleep(1)
 
         sink = AlertKafkaSink(scoring_config)
@@ -379,11 +391,13 @@ class TestHighVolumeShutdown:
         sink.close()
 
         # Consume all
-        consumer = Consumer({
-            "bootstrap.servers": kafka_bootstrap,
-            "group.id": f"test-high-vol-{uuid.uuid4()}",
-            "auto.offset.reset": "earliest",
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": kafka_bootstrap,
+                "group.id": f"test-high-vol-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer.subscribe([scoring_config.fraud_alerts_topic])
 
         received = []

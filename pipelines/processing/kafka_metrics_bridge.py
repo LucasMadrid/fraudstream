@@ -32,7 +32,10 @@ from pathlib import Path
 
 import fastavro
 
-from pipelines.shared.interfaces import get_metrics_provider, get_rule_metrics_publisher, RuleMetricsPublisher
+from pipelines.shared.interfaces import (  # noqa: F401
+    get_metrics_provider,  # Re-exported for contract verification
+    get_rule_metrics_publisher,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +79,10 @@ def _process_alert_message(
     if not isinstance(severity, str):
         severity = str(severity)
     severity = severity.lower()
-    
+
     # Use interface to publish metrics (Constitution III: Explicit Contracts)
     rule_metrics = get_rule_metrics_publisher()
-    
+
     for rule_id in record.get("matched_rule_names", []):
         if rule_id.endswith(":shadow"):
             continue
@@ -161,7 +164,7 @@ def _enriched_consumer_thread(
     logger.info("Metrics bridge (enriched): subscribed to %s", topic)
 
     rule_items = list(rule_family_map.items())  # snapshot for tight inner loop
-    
+
     # Use interface to publish metrics (Constitution III: Explicit Contracts)
     rule_metrics = get_rule_metrics_publisher()
 

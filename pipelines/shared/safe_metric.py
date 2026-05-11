@@ -20,10 +20,10 @@ class _NullMetric:
         self._name = name
         self._error = error
 
-    def __call__(self, *args, **kwargs) -> "_NullMetric":
+    def __call__(self, *args, **kwargs) -> _NullMetric:
         return self
 
-    def labels(self, *args, **kwargs) -> "_NullMetric":
+    def labels(self, *args, **kwargs) -> _NullMetric:
         return self
 
     def inc(self, amount: float = 1) -> None:
@@ -72,7 +72,7 @@ class SafeCounter:
             logger.debug(f"SafeCounter '{self._name}' using null metric: {e}")
             return _NullMetric(self._name, e)
 
-    def labels(self, *args, **kwargs) -> "SafeCounter":
+    def labels(self, *args, **kwargs) -> SafeCounter:
         """Return a labeled version of this counter."""
         try:
             labeled = self._metric.labels(*args, **kwargs)
@@ -138,7 +138,7 @@ class SafeHistogram:
             logger.debug(f"SafeHistogram '{self._name}' using null metric: {e}")
             return _NullMetric(self._name, e)
 
-    def labels(self, *args, **kwargs) -> "SafeHistogram":
+    def labels(self, *args, **kwargs) -> SafeHistogram:
         """Return a labeled version of this histogram."""
         try:
             labeled = self._metric.labels(*args, **kwargs)
@@ -200,7 +200,7 @@ class SafeGauge:
             logger.debug(f"SafeGauge '{self._name}' using null metric: {e}")
             return _NullMetric(self._name, e)
 
-    def labels(self, *args, **kwargs) -> "SafeGauge":
+    def labels(self, *args, **kwargs) -> SafeGauge:
         """Return a labeled version of this gauge."""
         try:
             labeled = self._metric.labels(*args, **kwargs)
@@ -272,3 +272,13 @@ class _SafeMetric:
                 return _SafeMetric(None)
 
         return _call
+
+
+# Shared cross-layer metrics
+# These metrics are defined here to avoid duplicate registration
+# when imported by both processing and scoring layers
+
+feature_materialization_lag_ms = SafeGauge(
+    "feature_materialization_lag_ms",
+    "Feature store materialization lag in milliseconds",
+)

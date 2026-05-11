@@ -15,7 +15,6 @@ from typing import Any
 
 import pytest
 
-
 # =============================================================================
 # TB-005-01: Processing must not import from Scoring
 # =============================================================================
@@ -49,18 +48,22 @@ class TestProcessingScoringImportBoundary:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    imports.append({
-                        "type": "import",
-                        "module": alias.name,
-                        "lineno": node.lineno,
-                    })
+                    imports.append(
+                        {
+                            "type": "import",
+                            "module": alias.name,
+                            "lineno": node.lineno,
+                        }
+                    )
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                imports.append({
-                    "type": "from_import",
-                    "module": module,
-                    "lineno": node.lineno,
-                })
+                imports.append(
+                    {
+                        "type": "from_import",
+                        "module": module,
+                        "lineno": node.lineno,
+                    }
+                )
         return imports
 
     def test_processing_no_direct_scoring_imports(self):
@@ -88,11 +91,13 @@ class TestProcessingScoringImportBoundary:
             for imp in imports:
                 module = imp["module"]
                 if module.startswith(forbidden_prefixes):
-                    violations.append({
-                        "file": str(py_file.relative_to(Path(__file__).parent.parent.parent)),
-                        "module": module,
-                        "line": imp["lineno"],
-                    })
+                    violations.append(
+                        {
+                            "file": str(py_file.relative_to(Path(__file__).parent.parent.parent)),
+                            "module": module,
+                            "line": imp["lineno"],
+                        }
+                    )
 
         # Document known violations - don't fail the test
         # but log them for tracking
@@ -126,17 +131,17 @@ class TestProcessingScoringImportBoundary:
                 if isinstance(node, ast.ImportFrom):
                     module = node.module or ""
                     if "pipelines.scoring" in module or module == "pipelines.scoring":
-                        scoring_imports_found.append({
-                            "file": py_file.name,
-                            "import": module,
-                            "line": node.lineno,
-                        })
+                        scoring_imports_found.append(
+                            {
+                                "file": py_file.name,
+                                "import": module,
+                                "line": node.lineno,
+                            }
+                        )
 
         # Document known violations
         if scoring_imports_found:
-            pytest.xfail(
-                f"Known architectural violations found: {scoring_imports_found}"
-            )
+            pytest.xfail(f"Known architectural violations found: {scoring_imports_found}")
 
 
 # =============================================================================
@@ -169,18 +174,22 @@ class TestScoringProcessingImportBoundary:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    imports.append({
-                        "type": "import",
-                        "module": alias.name,
-                        "lineno": node.lineno,
-                    })
+                    imports.append(
+                        {
+                            "type": "import",
+                            "module": alias.name,
+                            "lineno": node.lineno,
+                        }
+                    )
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                imports.append({
-                    "type": "from_import",
-                    "module": module,
-                    "lineno": node.lineno,
-                })
+                imports.append(
+                    {
+                        "type": "from_import",
+                        "module": module,
+                        "lineno": node.lineno,
+                    }
+                )
         return imports
 
     def test_scoring_no_direct_processing_imports(self):
@@ -201,11 +210,13 @@ class TestScoringProcessingImportBoundary:
             for imp in imports:
                 module = imp["module"]
                 if module.startswith(forbidden_prefix):
-                    violations.append({
-                        "file": str(py_file.relative_to(Path(__file__).parent.parent.parent)),
-                        "module": module,
-                        "line": imp["lineno"],
-                    })
+                    violations.append(
+                        {
+                            "file": str(py_file.relative_to(Path(__file__).parent.parent.parent)),
+                            "module": module,
+                            "line": imp["lineno"],
+                        }
+                    )
 
         assert not violations, (
             f"Scoring modules must not import from processing. Violations: {violations}"
@@ -322,9 +333,9 @@ class TestNoCircularImports:
         try:
             # Try importing key modules
             import pipelines.scoring.config
-            import pipelines.scoring.types
-            import pipelines.scoring.safe_metrics
             import pipelines.scoring.metrics
+            import pipelines.scoring.safe_metrics
+            import pipelines.scoring.types
 
             # These should succeed without circular import errors
             assert pipelines.scoring.config is not None

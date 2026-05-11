@@ -16,15 +16,17 @@ from pathlib import Path
 
 TLS_DIR = Path(__file__).parent
 
+
 def get_tls_cert_path(name: str) -> Path:
     """Get path to a TLS certificate file.
-    
+
     Args:
         name: Certificate file name (e.g., 'ca-cert.pem')
-        
+
     Returns:
         Path to the certificate file
     """
     return TLS_DIR / name
+
 
 __all__ = ["TLS_DIR", "get_tls_cert_path"]

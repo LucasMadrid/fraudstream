@@ -237,9 +237,7 @@ def geo_breakdown(
     )
 
 
-def velocity_by_decision(
-    days: int = 30, *, reader: IcebergReader | None = None
-) -> pd.DataFrame:
+def velocity_by_decision(days: int = 30, *, reader: IcebergReader | None = None) -> pd.DataFrame:
     """Average velocity features (1m, 5m, 1h, 24h) grouped by decision outcome.
 
     Args:

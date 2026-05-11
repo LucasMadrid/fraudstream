@@ -34,7 +34,7 @@ class FeatureVector:
     prev_txn_time_ms: int
 
     @classmethod
-    def from_feast_dict(cls, account_id: str, values: dict) -> "FeatureVector":
+    def from_feast_dict(cls, account_id: str, values: dict) -> FeatureVector:
         """Construct from the per-feature values dict returned by Feast online store."""
         return cls(
             account_id=account_id,
@@ -58,7 +58,7 @@ class FeatureVector:
         )
 
     def to_enrichment_dict(self) -> dict[str, object]:
-        """Return all feature fields (excluding account_id) for merging into an enriched transaction dict."""
+        """Return feature fields (excluding account_id) for enrichment dict."""
         d = asdict(self)
         d.pop("account_id")
         return d

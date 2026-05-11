@@ -6,9 +6,9 @@ import io
 import json
 import textwrap
 import threading
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -402,24 +402,34 @@ class TestProcessAlertMessage:
         from pipelines.processing.kafka_metrics_bridge import _process_alert_message
         from pipelines.scoring.metrics import rule_flags_total
 
-        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["VEL-PAM"], "severity": "high"})
+        raw = _make_avro_bytes(
+            {**_BASE_RECORD, "matched_rule_names": ["VEL-PAM"], "severity": "high"}
+        )
         parsed = _make_parsed_schema()
 
         _process_alert_message(raw, parsed, {"VEL-PAM": "velocity"})
 
-        val = rule_flags_total.labels(rule_id="VEL-PAM", rule_family="velocity", severity="high")._value.get()
+        val = rule_flags_total.labels(
+            rule_id="VEL-PAM", rule_family="velocity", severity="high"
+        )._value.get()
         assert val >= 1
 
     def test_shadow_rules_not_counted(self):
         from pipelines.processing.kafka_metrics_bridge import _process_alert_message
         from pipelines.scoring.metrics import rule_flags_total
 
-        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["VEL-001:shadow"], "severity": "medium"})
+        raw = _make_avro_bytes(
+            {**_BASE_RECORD, "matched_rule_names": ["VEL-001:shadow"], "severity": "medium"}
+        )
         parsed = _make_parsed_schema()
 
-        before = rule_flags_total.labels(rule_id="VEL-001:shadow", rule_family="unknown", severity="medium")._value.get()
+        before = rule_flags_total.labels(
+            rule_id="VEL-001:shadow", rule_family="unknown", severity="medium"
+        )._value.get()
         _process_alert_message(raw, parsed, {})
-        after = rule_flags_total.labels(rule_id="VEL-001:shadow", rule_family="unknown", severity="medium")._value.get()
+        after = rule_flags_total.labels(
+            rule_id="VEL-001:shadow", rule_family="unknown", severity="medium"
+        )._value.get()
 
         assert after == before
 
@@ -427,24 +437,32 @@ class TestProcessAlertMessage:
         from pipelines.processing.kafka_metrics_bridge import _process_alert_message
         from pipelines.scoring.metrics import rule_flags_total
 
-        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["MYSTERY-001"], "severity": "low"})
+        raw = _make_avro_bytes(
+            {**_BASE_RECORD, "matched_rule_names": ["MYSTERY-001"], "severity": "low"}
+        )
         parsed = _make_parsed_schema()
 
         _process_alert_message(raw, parsed, {})  # empty map → unknown family
 
-        val = rule_flags_total.labels(rule_id="MYSTERY-001", rule_family="unknown", severity="low")._value.get()
+        val = rule_flags_total.labels(
+            rule_id="MYSTERY-001", rule_family="unknown", severity="low"
+        )._value.get()
         assert val >= 1
 
     def test_severity_normalised_to_lowercase(self):
         from pipelines.processing.kafka_metrics_bridge import _process_alert_message
         from pipelines.scoring.metrics import rule_flags_total
 
-        raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": ["VEL-LC"], "severity": "critical"})
+        raw = _make_avro_bytes(
+            {**_BASE_RECORD, "matched_rule_names": ["VEL-LC"], "severity": "critical"}
+        )
         parsed = _make_parsed_schema()
 
         _process_alert_message(raw, parsed, {"VEL-LC": "velocity"})
 
-        val = rule_flags_total.labels(rule_id="VEL-LC", rule_family="velocity", severity="critical")._value.get()
+        val = rule_flags_total.labels(
+            rule_id="VEL-LC", rule_family="velocity", severity="critical"
+        )._value.get()
         assert val >= 1
 
     def test_empty_matched_rules_increments_nothing(self):
@@ -454,9 +472,13 @@ class TestProcessAlertMessage:
         raw = _make_avro_bytes({**_BASE_RECORD, "matched_rule_names": [], "severity": "low"})
         parsed = _make_parsed_schema()
 
-        before = rule_flags_total.labels(rule_id="NOOP", rule_family="unknown", severity="low")._value.get()
+        before = rule_flags_total.labels(
+            rule_id="NOOP", rule_family="unknown", severity="low"
+        )._value.get()
         _process_alert_message(raw, parsed, {})
-        after = rule_flags_total.labels(rule_id="NOOP", rule_family="unknown", severity="low")._value.get()
+        after = rule_flags_total.labels(
+            rule_id="NOOP", rule_family="unknown", severity="low"
+        )._value.get()
 
         assert after == before
 

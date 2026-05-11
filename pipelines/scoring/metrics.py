@@ -5,7 +5,7 @@ All metrics use SafeMetric wrappers to ensure failures don't crash the hot path.
 
 from __future__ import annotations
 
-from pipelines.scoring.safe_metrics import SafeCounter, SafeHistogram, SafeGauge
+from pipelines.scoring.safe_metrics import SafeCounter, SafeHistogram
 
 feature_store_fallback_total = SafeCounter(
     "feature_store_fallback_total",
@@ -24,9 +24,11 @@ feature_store_retrieval_seconds = SafeHistogram(
     buckets=[0.001, 0.002, 0.003, 0.005, 0.010, 0.050, 0.100, 0.250, 0.500, 1.0],
 )
 
-feature_materialization_lag_ms = SafeGauge(
-    "feature_materialization_lag_ms",
-    "Feature store materialization lag in milliseconds",
+# Import shared cross-layer metric from shared module
+# This metric is defined in shared to avoid duplicate Prometheus registration
+# when both processing and scoring layers import it
+from pipelines.shared.safe_metric import (  # noqa: E402, F401
+    feature_materialization_lag_ms,  # Re-exported for backwards compatibility
 )
 
 evaluation_errors_total = SafeCounter(

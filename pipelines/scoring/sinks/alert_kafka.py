@@ -74,27 +74,33 @@ class AlertKafkaSink:
     def _serialise(self, alert: FraudAlert) -> bytes:
         """Serialise FraudAlert to Avro bytes."""
         self._load_schemas()
-        return _to_avro_bytes(self._parsed_schema, {
-            "transaction_id": alert.transaction_id,
-            "account_id": alert.account_id,
-            "matched_rule_names": alert.matched_rule_names,
-            "severity": alert.severity,
-            "evaluation_timestamp": alert.evaluation_timestamp,
-        })
+        return _to_avro_bytes(
+            self._parsed_schema,
+            {
+                "transaction_id": alert.transaction_id,
+                "account_id": alert.account_id,
+                "matched_rule_names": alert.matched_rule_names,
+                "severity": alert.severity,
+                "evaluation_timestamp": alert.evaluation_timestamp,
+            },
+        )
 
     def _serialise_dlq(self, alert: FraudAlert, error_type: str, error_message: str) -> bytes:
         """Serialise a failed alert to DLQ Avro bytes."""
         self._load_schemas()
-        return _to_avro_bytes(self._dlq_schema, {
-            "transaction_id": alert.transaction_id,
-            "account_id": alert.account_id,
-            "matched_rule_names": alert.matched_rule_names,
-            "severity": alert.severity,
-            "evaluation_timestamp": alert.evaluation_timestamp,
-            "error_type": error_type,
-            "error_message": error_message,
-            "failed_at": int(time.time() * 1000),
-        })
+        return _to_avro_bytes(
+            self._dlq_schema,
+            {
+                "transaction_id": alert.transaction_id,
+                "account_id": alert.account_id,
+                "matched_rule_names": alert.matched_rule_names,
+                "severity": alert.severity,
+                "evaluation_timestamp": alert.evaluation_timestamp,
+                "error_type": error_type,
+                "error_message": error_message,
+                "failed_at": int(time.time() * 1000),
+            },
+        )
 
     def _on_delivery(self, err, msg, alert: FraudAlert) -> None:  # noqa: ARG002
         """Delivery report callback — routes failures to DLQ."""
