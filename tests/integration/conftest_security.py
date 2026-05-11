@@ -30,10 +30,10 @@ if TYPE_CHECKING:
     from testcontainers.core.container import DockerContainer
 
 # =============================================================================
-# Paths
+# TLS Certificate Fixtures (Dynamic Generation)
 # =============================================================================
 
-TLS_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "tls"
+from tests.fixtures.tls import get_tls_cert_path
 
 
 # =============================================================================
@@ -43,18 +43,21 @@ TLS_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "tls"
 
 @pytest.fixture(scope="session")
 def tls_certificates() -> dict[str, Path]:
-    """Provide paths to test TLS certificates.
+    """Provide paths to dynamically-generated test TLS certificates.
+
+    Certificates are generated on-the-fly to avoid storing private keys
+    in version control (security best practice).
 
     Returns:
         Dictionary with paths to CA cert, server cert/key, client cert/key.
     """
     return {
-        "ca_cert": TLS_FIXTURES_DIR / "ca-cert.pem",
-        "ca_key": TLS_FIXTURES_DIR / "ca-key.pem",
-        "server_cert": TLS_FIXTURES_DIR / "server-cert.pem",
-        "server_key": TLS_FIXTURES_DIR / "server-key.pem",
-        "client_cert": TLS_FIXTURES_DIR / "client-cert.pem",
-        "client_key": TLS_FIXTURES_DIR / "client-key.pem",
+        "ca_cert": get_tls_cert_path("ca_cert"),
+        "ca_key": get_tls_cert_path("ca_key"),
+        "server_cert": get_tls_cert_path("server_cert"),
+        "server_key": get_tls_cert_path("server_key"),
+        "client_cert": get_tls_cert_path("client_cert"),
+        "client_key": get_tls_cert_path("client_key"),
     }
 
 

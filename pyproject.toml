@@ -25,6 +25,7 @@ dev = [
     "testcontainers[kafka]>=4.5",
     "hypothesis>=6.100",
     "ruff>=0.4",
+    "cryptography>=40",
 ]
 processing = [
     "apache-flink>=2.0",
