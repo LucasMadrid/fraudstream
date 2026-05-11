@@ -75,6 +75,9 @@ markers = [
     "integration: marks tests as integration tests requiring Docker",
     "slow: marks tests as slow (high-volume latency/throughput assertions)",
     "perf: marks tests as performance benchmarks (opt-in only)",
+    "latency: marks tests as latency benchmarks (p99 measurements)",
+    "throughput: marks tests as throughput benchmarks (TPS measurements)",
+    "load: marks tests as load tests (concurrent session testing)",
 ]
 
 [tool.coverage.run]
