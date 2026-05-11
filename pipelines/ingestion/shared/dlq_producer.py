@@ -6,6 +6,12 @@ import socket
 import time
 import uuid
 
+# Export Producer for testing/mocking purposes
+try:
+    from confluent_kafka import Producer
+except ImportError:
+    Producer = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 DLQ_TOPIC = "txn.api.dlq"
@@ -19,7 +25,8 @@ class DLQProducer:
     """
 
     def __init__(self, bootstrap_servers: str) -> None:
-        from confluent_kafka import Producer
+        if Producer is None:
+            raise ImportError("confluent_kafka is required for DLQProducer")
 
         self._producer = Producer(
             {

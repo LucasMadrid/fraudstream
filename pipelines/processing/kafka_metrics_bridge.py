@@ -32,7 +32,7 @@ from pathlib import Path
 
 import fastavro
 
-from pipelines.scoring.metrics import rule_flags_total
+from pipelines.shared.interfaces import get_metrics_provider, get_rule_metrics_publisher, RuleMetricsPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -76,15 +76,15 @@ def _process_alert_message(
     if not isinstance(severity, str):
         severity = str(severity)
     severity = severity.lower()
+    
+    # Use interface to publish metrics (Constitution III: Explicit Contracts)
+    rule_metrics = get_rule_metrics_publisher()
+    
     for rule_id in record.get("matched_rule_names", []):
         if rule_id.endswith(":shadow"):
             continue
         family = rule_family_map.get(rule_id, "unknown")
-        rule_flags_total.labels(
-            rule_id=rule_id,
-            rule_family=family,
-            severity=severity,
-        ).inc()
+        rule_metrics.record_rule_flag(rule_id=rule_id, rule_family=family, severity=severity)
 
 
 def _alerts_consumer_thread(
@@ -145,8 +145,6 @@ def _enriched_consumer_thread(
 
     try:
         from confluent_kafka import Consumer
-
-        from pipelines.scoring.metrics import rule_evaluations_total
     except ImportError as exc:
         logger.warning("Metrics bridge (enriched): missing dependency, skipping: %s", exc)
         return
@@ -163,6 +161,9 @@ def _enriched_consumer_thread(
     logger.info("Metrics bridge (enriched): subscribed to %s", topic)
 
     rule_items = list(rule_family_map.items())  # snapshot for tight inner loop
+    
+    # Use interface to publish metrics (Constitution III: Explicit Contracts)
+    rule_metrics = get_rule_metrics_publisher()
 
     try:
         while not _stop_event.is_set():
@@ -173,7 +174,7 @@ def _enriched_consumer_thread(
                 continue
             # Each enriched record represents one evaluation pass over all rules.
             for rule_id, family in rule_items:
-                rule_evaluations_total.labels(rule_id=rule_id, rule_family=family).inc()
+                rule_metrics.record_rule_evaluation(rule_id=rule_id, rule_family=family)
     finally:
         consumer.close()
         logger.info("Metrics bridge (enriched): consumer closed")

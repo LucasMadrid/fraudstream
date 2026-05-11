@@ -1,35 +1,47 @@
-"""Prometheus metrics for the fraud scoring pipeline."""
+"""Prometheus metrics for the fraud scoring pipeline.
+
+All metrics use SafeMetric wrappers to ensure failures don't crash the hot path.
+"""
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Histogram
+from pipelines.scoring.safe_metrics import SafeCounter, SafeHistogram, SafeGauge
 
-from pipelines.shared.safe_metric import _SafeMetric
-
-feature_store_fallback_total = Counter(
+feature_store_fallback_total = SafeCounter(
     "feature_store_fallback_total",
     "Feature store zero-value fallbacks",
     ["reason"],
 )
 
-feature_store_miss_total = Counter(
+feature_store_miss_total = SafeCounter(
     "feature_store_miss_total",
     "Feature store cache misses (account not found)",
 )
 
-feature_store_retrieval_seconds = Histogram(
+feature_store_retrieval_seconds = SafeHistogram(
     "feature_store_retrieval_seconds",
     "Feature store retrieval latency",
     buckets=[0.001, 0.002, 0.003, 0.005, 0.010, 0.050, 0.100, 0.250, 0.500, 1.0],
 )
 
-rule_evaluations_total = Counter(
+feature_materialization_lag_ms = SafeGauge(
+    "feature_materialization_lag_ms",
+    "Feature store materialization lag in milliseconds",
+)
+
+evaluation_errors_total = SafeCounter(
+    "evaluation_errors_total",
+    "Total number of evaluation errors",
+    ["error_type"],
+)
+
+rule_evaluations_total = SafeCounter(
     "rule_evaluations_total",
     "Total number of rule evaluations performed",
     ["rule_id", "rule_family"],
 )
 
-rule_flags_total = Counter(
+rule_flags_total = SafeCounter(
     "rule_flags_total",
     "Total number of rules that triggered a fraud flag",
     ["rule_id", "rule_family", "severity"],
@@ -46,39 +58,39 @@ def record_flag(rule_id: str, rule_family: str, severity: str) -> None:
     rule_flags_total.labels(rule_id=rule_id, rule_family=rule_family, severity=severity).inc()
 
 
-rule_shadow_triggers_total = Counter(
+rule_shadow_triggers_total = SafeCounter(
     "rule_shadow_triggers_total",
     "Shadow rule triggers (rule fired but determination not changed)",
     ["rule_id", "mode"],
 )
 
-rule_shadow_fp_total = Counter(
+rule_shadow_fp_total = SafeCounter(
     "rule_shadow_fp_total",
     "Shadow rule triggers where final determination was clean (estimated false positives)",
     ["rule_id"],
 )
 
-rule_triggers_total = Counter(
+rule_triggers_total = SafeCounter(
     "rule_triggers_total",
     "Total rule evaluations for active rules (denominator for FP rate alert)",
     ["rule_id"],
 )
 
-rule_active_fp_total = Counter(
+rule_active_fp_total = SafeCounter(
     "rule_active_fp_total",
     "Active rule triggers where final determination was clean (false positives)",
     ["rule_id"],
 )
 
-iceberg_decisions_buffer_overflow_total = _SafeMetric(Counter(
+iceberg_decisions_buffer_overflow_total = SafeCounter(
     "iceberg_decisions_buffer_overflow_total",
     "Total number of times the fraud decisions Iceberg buffer reached max capacity",
-))
+)
 
-iceberg_decisions_catalog_unavailable_total = _SafeMetric(Counter(
+iceberg_decisions_catalog_unavailable_total = SafeCounter(
     "iceberg_decisions_catalog_unavailable_total",
     "Total number of Iceberg catalog connection errors for fraud decisions",
-))
+)
 
 
 def record_shadow_trigger(rule_id: str) -> None:
