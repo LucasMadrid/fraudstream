@@ -64,7 +64,7 @@ analytics = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["pipelines*", "tests*"]
+include = ["contracts*", "pipelines*", "tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -95,7 +95,7 @@ select = ["E", "F", "I", "UP"]
 ignore = ["UP017", "UP042"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["analytics", "pipelines"]
+known-first-party = ["analytics", "contracts", "pipelines"]
 
 [tool.uv.extra-build-dependencies]
 apache-beam = ["setuptools", "wheel"]
