@@ -8,15 +8,10 @@ Uses cryptography library (standard lib compatible).
 
 from __future__ import annotations
 
+import ipaddress
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from cryptography import x509
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
 
 
 def _ensure_crypto() -> tuple:
@@ -30,8 +25,7 @@ def _ensure_crypto() -> tuple:
         return x509, hashes, serialization, rsa, NameOID
     except ImportError as exc:
         raise ImportError(
-            "cryptography library required for TLS tests. "
-            "Install with: pip install cryptography"
+            "cryptography library required for TLS tests. Install with: pip install cryptography"
         ) from exc
 
 
@@ -96,9 +90,7 @@ def generate_test_certificates(output_dir: Path | None = None) -> dict[str, Path
     ca_cert_path = output_dir / "ca-cert.pem"
     ca_key_path = output_dir / "ca-key.pem"
 
-    ca_cert_path.write_bytes(
-        ca_cert.public_bytes(serialization.Encoding.PEM)
-    )
+    ca_cert_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
     ca_key_path.write_bytes(
         ca_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -162,9 +154,7 @@ def generate_test_certificates(output_dir: Path | None = None) -> dict[str, Path
     server_cert_path = output_dir / "server-cert.pem"
     server_key_path = output_dir / "server-key.pem"
 
-    server_cert_path.write_bytes(
-        server_cert.public_bytes(serialization.Encoding.PEM)
-    )
+    server_cert_path.write_bytes(server_cert.public_bytes(serialization.Encoding.PEM))
     server_key_path.write_bytes(
         server_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -219,9 +209,7 @@ def generate_test_certificates(output_dir: Path | None = None) -> dict[str, Path
     client_cert_path = output_dir / "client-cert.pem"
     client_key_path = output_dir / "client-key.pem"
 
-    client_cert_path.write_bytes(
-        client_cert.public_bytes(serialization.Encoding.PEM)
-    )
+    client_cert_path.write_bytes(client_cert.public_bytes(serialization.Encoding.PEM))
     client_key_path.write_bytes(
         client_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -238,7 +226,3 @@ def generate_test_certificates(output_dir: Path | None = None) -> dict[str, Path
         "client_cert": client_cert_path,
         "client_key": client_key_path,
     }
-
-
-# Import ipaddress here to avoid issues if module is imported before _ensure_crypto
-import ipaddress  # noqa: E402

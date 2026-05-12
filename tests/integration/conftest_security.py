@@ -20,6 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.fixtures.tls import get_tls_cert_path
+
 # Disable Ryuk (testcontainers reaper) — required on macOS Docker Desktop
 os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
@@ -28,13 +30,6 @@ if TYPE_CHECKING:
 
     from confluent_kafka import Consumer, Producer
     from testcontainers.core.container import DockerContainer
-
-# =============================================================================
-# TLS Certificate Fixtures (Dynamic Generation)
-# =============================================================================
-
-from tests.fixtures.tls import get_tls_cert_path
-
 
 # =============================================================================
 # TLS Certificate Fixtures

@@ -1,0 +1,95 @@
+# Agent Assignments
+# Feature: 023-fix-ci-green
+# Generated: 2026-05-12
+# Command: /speckit.agent-assign.assign
+
+agents_scanned:
+  - name: "python-pro"
+    source: "user"
+    description: "Build type-safe, production-ready Python code with modern async patterns"
+  - name: "qa-expert"
+    source: "user"
+    description: "Comprehensive QA strategy, test planning, and quality metrics analysis"
+  - name: "devops-engineer"
+    source: "user"
+    description: "CI/CD pipelines, containerization strategies, and deployment workflows"
+  - name: "sre-engineer"
+    source: "user"
+    description: "SLO definition, error budget management, and reliability automation"
+  - name: "git-workflow-manager"
+    source: "user"
+    description: "Git workflows, branching strategies, and merge management"
+  - name: "code-reviewer"
+    source: "user"
+    description: "Comprehensive code reviews focusing on quality, security, and best practices"
+  - name: "data-engineer"
+    source: "user"
+    description: "Data pipelines, ETL/ELT processes, and data infrastructure"
+  - name: "ml-engineer"
+    source: "user"
+    description: "Production ML systems, model serving, and performance optimization"
+
+assignments:
+  T001:
+    agent: "git-workflow-manager"
+    reason: "Git state verification — confirm branch and clean working tree"
+  T002:
+    agent: "qa-expert"
+    reason: "Linting baseline check — run ruff and confirm violation count"
+  T003:
+    agent: "qa-expert"
+    reason: "Test collection verification — confirm F821 errors on pytest collect"
+  T004:
+    agent: "python-pro"
+    reason: "Python API introspection — read and record ProcessingDLQSink signatures"
+  T005:
+    agent: "python-pro"
+    reason: "Python test rewrite — update TestProcessingDLQSinkInit to match real API"
+  T006:
+    agent: "python-pro"
+    reason: "Python test rewrite — replace TestProcessingDLQSinkOpen with constructor test"
+  T007:
+    agent: "python-pro"
+    reason: "Python test rewrite — replace produce tests with send keyword-arg tests"
+  T008:
+    agent: "python-pro"
+    reason: "Python test rewrite — replace flush tests with correct mock pattern"
+  T009:
+    agent: "python-pro"
+    reason: "Python test rewrite — remove TestDLQKafkaProducerClose (no close() method)"
+  T010:
+    agent: "qa-expert"
+    reason: "Test collection check — verify zero collection errors after rewrites"
+  T011:
+    agent: "qa-expert"
+    reason: "Test execution verification — confirm all DLQ tests pass"
+  T012:
+    agent: "python-pro"
+    reason: "Python import ordering fix — move ipaddress import to top of file (E402)"
+  T013:
+    agent: "python-pro"
+    reason: "Python dead import removal — remove TYPE_CHECKING guard block (F401×3)"
+  T014:
+    agent: "python-pro"
+    reason: "Python import sort fix — reorder imports in conftest_security.py (I001)"
+  T015:
+    agent: "qa-expert"
+    reason: "Security content check — grep for hardcoded PEM material in tracked files"
+  T016:
+    agent: "devops-engineer"
+    reason: "CI lint gate verification — run ruff check and confirm 0 violations"
+  T017:
+    agent: "devops-engineer"
+    reason: "CI format gate verification — run ruff format --check and confirm clean"
+  T018:
+    agent: "sre-engineer"
+    reason: "Stability check — run pytest 5× and confirm identical results (no flakiness)"
+  T019:
+    agent: "qa-expert"
+    reason: "Regression verification — full unit suite, no previously-passing tests broken"
+  T020:
+    agent: "devops-engineer"
+    reason: "CI pipeline simulation — ruff check + format + pytest all exit 0 locally"
+  T021:
+    agent: "git-workflow-manager"
+    reason: "Git commit and CI push — commit fix, push branch, verify GitHub Actions"

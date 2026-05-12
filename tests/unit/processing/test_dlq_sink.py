@@ -1,121 +1,134 @@
-"""Unit tests for DLQKafkaProducer."""
+"""Unit tests for ProcessingDLQSink."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from pipelines.processing.shared.dlq_sink import DLQKafkaProducer
+from pipelines.processing.shared.dlq_sink import ProcessingDLQSink
 
 
-class TestDLQKafkaProducerInit:
-    """Test DLQKafkaProducer construction."""
+class TestProcessingDLQSinkInit:
+    """Test ProcessingDLQSink construction."""
 
-    def test_stores_config(self):
-        p = DLQKafkaProducer("localhost:9092", "txn.processing.dlq")
-        assert p._bootstrap_servers == "localhost:9092"
-        assert p._dlq_topic == "txn.processing.dlq"
-        assert p._producer is None
-
-
-class TestDLQKafkaProducerOpen:
-    """Test DLQKafkaProducer.open()."""
-
-    @patch("pipelines.processing.shared.dlq_sink.DLQKafkaProducer.open")
-    def test_open_creates_producer(self, mock_open):
-        p = DLQKafkaProducer("localhost:9092", "dlq")
-        p.open()
-        mock_open.assert_called_once()
-
-    def test_open_sets_producer_via_mock(self):
-        p = DLQKafkaProducer("localhost:9092", "dlq")
+    @patch("confluent_kafka.Producer")
+    def test_stores_config(self, mock_producer_class):
+        """Verify _producer, _topic, _schema_id are set after construction."""
         mock_producer = MagicMock()
-        with patch("confluent_kafka.Producer", return_value=mock_producer):
-            p.open()
+        mock_producer_class.return_value = mock_producer
+
+        p = ProcessingDLQSink("localhost:9092", "txn.processing.dlq", schema_id=42)
+
+        assert p._producer is mock_producer
+        assert p._topic == "txn.processing.dlq"
+        assert p._schema_id == 42
+
+
+class TestProcessingDLQSinkProducerCreation:
+    """Test that _producer is set after construction."""
+
+    @patch("confluent_kafka.Producer")
+    def test_producer_created_on_init(self, mock_producer_class):
+        """Verify confluent_kafka.Producer is created with correct config."""
+        mock_producer = MagicMock()
+        mock_producer_class.return_value = mock_producer
+
+        p = ProcessingDLQSink("localhost:9092", "dlq", schema_id=5)
+
+        # Verify Producer was called with the expected config
+        mock_producer_class.assert_called_once()
+        call_kwargs = mock_producer_class.call_args[0][0]
+        assert call_kwargs["bootstrap.servers"] == "localhost:9092"
+        assert call_kwargs["acks"] == 1
+        assert call_kwargs["linger.ms"] == 5
+        assert "client.id" in call_kwargs
+
+        # Verify producer is stored
         assert p._producer is mock_producer
 
 
-class TestDLQKafkaProducerProduce:
-    """Test DLQKafkaProducer.produce()."""
+class TestProcessingDLQSinkSend:
+    """Test ProcessingDLQSink.send()."""
 
-    def test_produce_before_open_logs_error(self, caplog):
-        import logging
+    @patch("confluent_kafka.Producer")
+    def test_send_with_all_kwargs(self, mock_producer_class):
+        """Verify send() calls producer with correct args."""
+        mock_producer = MagicMock()
+        mock_producer_class.return_value = mock_producer
 
-        caplog.set_level(
-            logging.ERROR,
-            logger="pipelines.processing.shared.dlq_sink",
-        )
-        p = DLQKafkaProducer("localhost:9092", "dlq")
-        p.produce(b"data")
-        assert any("called before open()" in r.message for r in caplog.records)
-
-    def test_produce_delegates_to_kafka_producer(self):
-        p = DLQKafkaProducer("localhost:9092", "my.dlq")
-        mock_prod = MagicMock()
-        p._producer = mock_prod
-
-        p.produce(b"\x00\x01\x02", key="txn-123")
-        mock_prod.produce.assert_called_once_with(
-            "my.dlq",
-            value=b"\x00\x01\x02",
-            key=b"txn-123",
+        p = ProcessingDLQSink("localhost:9092", "my.dlq", schema_id=1)
+        p.send(
+            source_topic="txn.input",
+            original_payload=b"\x00\x01\x02",
+            error_type="ValidationError",
+            error_message="Invalid transaction format",
         )
 
-    def test_produce_with_none_key(self):
-        p = DLQKafkaProducer("localhost:9092", "my.dlq")
-        mock_prod = MagicMock()
-        p._producer = mock_prod
+        # Verify producer.produce and producer.poll were called
+        mock_producer.produce.assert_called_once()
+        mock_producer.poll.assert_called_once_with(0)
 
-        p.produce(b"data", key=None)
-        mock_prod.produce.assert_called_once_with("my.dlq", value=b"data", key=None)
+    @patch("confluent_kafka.Producer")
+    def test_send_serializes_avro_record(self, mock_producer_class):
+        """Verify send() serializes a proper DLQ record."""
+        mock_producer = MagicMock()
+        mock_producer_class.return_value = mock_producer
 
-    def test_produce_swallows_exception(self, caplog):
-        import logging
-
-        caplog.set_level(
-            logging.ERROR,
-            logger="pipelines.processing.shared.dlq_sink",
+        p = ProcessingDLQSink("localhost:9092", "dlq", schema_id=7)
+        p.send(
+            source_topic="txn.events",
+            original_payload=b"event_data",
+            error_type="ParseError",
+            error_message="Unable to parse JSON",
         )
-        p = DLQKafkaProducer("localhost:9092", "my.dlq")
-        mock_prod = MagicMock()
-        mock_prod.produce.side_effect = RuntimeError("boom")
-        p._producer = mock_prod
 
-        # Should NOT raise
-        p.produce(b"data")
-        assert any("Failed to produce" in r.message for r in caplog.records)
+        # Capture the produced value and verify it starts with Confluent magic byte
+        call_args = mock_producer.produce.call_args
+        produced_value = call_args[1]["value"]
+
+        # Confluent wire format: magic byte (0x00) + 4-byte big-endian schema ID
+        assert produced_value[:1] == b"\x00"
+        schema_id_bytes = produced_value[1:5]
+        assert int.from_bytes(schema_id_bytes, "big") == 7
+
+    @patch("confluent_kafka.Producer")
+    def test_send_uses_correct_topic(self, mock_producer_class):
+        """Verify send() writes to the configured topic."""
+        mock_producer = MagicMock()
+        mock_producer_class.return_value = mock_producer
+
+        p = ProcessingDLQSink("localhost:9092", "custom.dlq.topic", schema_id=0)
+        p.send(
+            source_topic="input",
+            original_payload=b"data",
+            error_type="Error",
+            error_message="msg",
+        )
+
+        call_kwargs = mock_producer.produce.call_args[1]
+        assert call_kwargs["topic"] == "custom.dlq.topic"
 
 
-class TestDLQKafkaProducerFlush:
-    """Test DLQKafkaProducer.flush()."""
+class TestProcessingDLQSinkFlush:
+    """Test ProcessingDLQSink.flush()."""
 
-    def test_flush_delegates(self):
-        p = DLQKafkaProducer("localhost:9092", "dlq")
-        mock_prod = MagicMock()
-        p._producer = mock_prod
+    @patch("confluent_kafka.Producer")
+    def test_flush_with_default_timeout(self, mock_producer_class):
+        """Verify flush() delegates to producer with default 5.0 timeout."""
+        mock_producer = MagicMock()
+        mock_producer_class.return_value = mock_producer
 
-        p.flush(timeout=3.0)
-        mock_prod.flush.assert_called_once_with(3.0)
-
-    def test_flush_noop_when_not_open(self):
-        p = DLQKafkaProducer("localhost:9092", "dlq")
-        # Should not raise
+        p = ProcessingDLQSink("localhost:9092", "dlq")
         p.flush()
 
+        mock_producer.flush.assert_called_once_with(5.0)
 
-class TestDLQKafkaProducerClose:
-    """Test DLQKafkaProducer.close()."""
+    @patch("confluent_kafka.Producer")
+    def test_flush_with_custom_timeout(self, mock_producer_class):
+        """Verify flush(timeout=X) delegates with custom timeout."""
+        mock_producer = MagicMock()
+        mock_producer_class.return_value = mock_producer
 
-    def test_close_flushes_and_nulls(self):
-        p = DLQKafkaProducer("localhost:9092", "dlq")
-        mock_prod = MagicMock()
-        p._producer = mock_prod
+        p = ProcessingDLQSink("localhost:9092", "dlq")
+        p.flush(timeout=3.0)
 
-        p.close()
-        mock_prod.flush.assert_called_once_with(timeout=10.0)
-        assert p._producer is None
-
-    def test_close_noop_when_not_open(self):
-        p = DLQKafkaProducer("localhost:9092", "dlq")
-        # Should not raise
-        p.close()
-        assert p._producer is None
+        mock_producer.flush.assert_called_once_with(3.0)
