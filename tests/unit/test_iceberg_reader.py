@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pyarrow as pa
 import pytest
 
-from analytics.queries.iceberg_reader import IcebergReader
+pytest.importorskip("pyiceberg", reason="pyiceberg not installed in this environment")
+
+import pyarrow as pa  # noqa: E402
+
+from analytics.queries.iceberg_reader import IcebergReader  # noqa: E402
 
 _SAMPLE = pa.table({"id": pa.array(["t1"], type=pa.string())})
 

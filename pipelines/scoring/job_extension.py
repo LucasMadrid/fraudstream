@@ -8,6 +8,26 @@ from pipelines.scoring.types import FeatureServingProtocol, FraudAlert, FraudDec
 
 logger = logging.getLogger(__name__)
 
+_FEATURE_ZERO_DEFAULTS: dict = {
+    "vel_count_1m": 0,
+    "vel_amount_1m": 0.0,
+    "vel_count_5m": 0,
+    "vel_amount_5m": 0.0,
+    "vel_count_1h": 0,
+    "vel_amount_1h": 0.0,
+    "vel_count_24h": 0,
+    "vel_amount_24h": 0.0,
+    "geo_country": "",
+    "geo_city": "",
+    "geo_network_class": "UNKNOWN",
+    "geo_confidence": 0.0,
+    "device_first_seen": 0,
+    "device_txn_count": 0,
+    "device_known_fraud": False,
+    "prev_geo_country": None,
+    "prev_txn_time_ms": None,
+}
+
 
 class _FeatureEnrichmentFunction:
     """Flink MapFunction that fetches feature vectors per transaction.
