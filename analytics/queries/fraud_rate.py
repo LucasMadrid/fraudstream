@@ -57,7 +57,7 @@ def fraud_rate_daily(hours: int = 720) -> pd.DataFrame:
     try:
         return conn.execute("""
             SELECT
-                CAST(d.decision_time_ms AS DATE)            AS decision_date,
+                CAST(epoch_ms(d.decision_time_ms) AS DATE)  AS decision_date,
                 COALESCE(e.channel, 'unknown')               AS channel,
                 d.decision,
                 COUNT(*)                                     AS transaction_count,

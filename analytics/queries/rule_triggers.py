@@ -79,7 +79,7 @@ def rule_trigger_daily(rule_name: str, hours: int = 720) -> pd.DataFrame:
             """
             WITH expanded AS (
                 SELECT
-                    CAST(decision_time_ms AS DATE) AS decision_date,
+                    CAST(epoch_ms(decision_time_ms) AS DATE) AS decision_date,
                     decision,
                     fraud_score,
                     UNNEST(rule_triggers)                    AS rule_name

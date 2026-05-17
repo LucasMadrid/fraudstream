@@ -81,7 +81,7 @@ def model_version_daily(model_version: str, hours: int = 720) -> pd.DataFrame:
         return conn.execute(
             """
             SELECT
-                CAST(decision_time_ms AS DATE) AS decision_date,
+                CAST(epoch_ms(decision_time_ms) AS DATE) AS decision_date,
                 decision,
                 COUNT(*)                                 AS transaction_count,
                 AVG(fraud_score)                         AS avg_fraud_score,
