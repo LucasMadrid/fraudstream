@@ -36,7 +36,9 @@ with tab_trend:
             )
             total_df = df.groupby("decision_date", as_index=False)["transaction_count"].sum()
             merged = fraud_df.merge(total_df, on="decision_date", suffixes=("_fraud", "_total"))
-            merged["fraud_rate"] = merged["transaction_count_fraud"] / merged["transaction_count_total"]
+            merged["fraud_rate"] = (
+                merged["transaction_count_fraud"] / merged["transaction_count_total"]
+            )
             st.line_chart(merged.set_index("decision_date")["fraud_rate"], use_container_width=True)
             st.caption("Fraud rate = BLOCK decisions / total decisions per day")
 
