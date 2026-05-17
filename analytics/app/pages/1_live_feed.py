@@ -6,7 +6,8 @@ from collections import deque
 
 import streamlit as st
 
-from analytics.consumers.kafka_consumer import AnalyticsKafkaConsumer, FraudAlertDisplay
+from analytics.app._consumer import get_consumer
+from analytics.consumers.kafka_consumer import FraudAlertDisplay
 
 st.set_page_config(page_title="Live Feed", page_icon="⚡", layout="wide")
 st.title("⚡ Live Fraud Alert Feed")
@@ -28,16 +29,11 @@ _DECISION_COLOR = {
 }
 
 
-def _get_consumer() -> AnalyticsKafkaConsumer | None:
-    """Return the AnalyticsKafkaConsumer stored in session state, or None."""
-    return st.session_state.get("consumer")
-
-
-consumer = _get_consumer()
+consumer = get_consumer()
 
 # ── connection banner ────────────────────────────────────────────────────────
-if consumer is None or not consumer.is_alive():
-    st.error("⚠️ Consumer not running — navigate to Home to start it, then return here.")
+if not consumer.is_alive():
+    st.error("⚠️ Kafka consumer thread is not running.")
     st.stop()
 
 # ── local alert buffer (per session) ─────────────────────────────────────────
