@@ -1,4 +1,4 @@
-"""Model version comparison — historical stats from Trino v_model_versions."""
+"""Model version comparison — historical stats from Iceberg via DuckDB."""
 
 import streamlit as st
 
@@ -16,9 +16,9 @@ except ImportError as e:
 days = st.sidebar.slider("Lookback (days)", min_value=1, max_value=90, value=30)
 
 try:
-    summary = model_version_summary(days=days)
+    summary = model_version_summary(hours=days * 24)
 except Exception as e:
-    st.error(f"Trino query failed: {e}")
+    st.error(f"Query failed: {e}")
     st.stop()
 
 if summary.empty:
@@ -53,10 +53,10 @@ if len(versions) >= 2:
     v_b = col_b.selectbox("Version B", versions, index=min(1, len(versions) - 1))
 
     try:
-        da = model_version_daily(v_a, days=days)
-        db = model_version_daily(v_b, days=days)
+        da = model_version_daily(v_a, hours=days * 24)
+        db = model_version_daily(v_b, hours=days * 24)
     except Exception as e:
-        st.error(f"Trino query failed: {e}")
+        st.error(f"Query failed: {e}")
     else:
         da["decision_date"] = pd.to_datetime(da["decision_date"])
         db["decision_date"] = pd.to_datetime(db["decision_date"])
