@@ -428,12 +428,16 @@ elif search_clicked or not trace_id_search:
 
     service_filter = selected_service if selected_service != "All Services" else None
 
-    traces = search_traces(
-        service=service_filter,
-        operation=selected_operation,
-        lookback_hours=lookback_hours,
-        limit=limit,
-    )
+    if service_filter is None and not search_clicked:
+        st.info("Select a service from the sidebar and click **Search Traces** to view traces.")
+        traces = []
+    else:
+        traces = search_traces(
+            service=service_filter,
+            operation=selected_operation,
+            lookback_hours=lookback_hours,
+            limit=limit,
+        )
 
     if traces:
         # Build trace summary table
