@@ -16,6 +16,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.24",
     "prometheus-client>=0.20",
     "urllib3>=2.7.0",  # CVE-2026-44431, CVE-2026-44432
+    "idna>=3.15",  # CVE-2026-45409
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,7 @@ dev = [
 ]
 processing = [
     "apache-flink>=2.0",
+    "avro>=1.11.5",  # PYSEC-2026-26 / CVE-2025-33042
     "confluent-kafka[schema-registry]>=2.3",
     "fastavro>=1.9",
     "geoip2>=4.8",
@@ -40,6 +42,7 @@ processing = [
 ]
 scoring = [
     "apache-flink>=2.0",
+    "avro>=1.11.5",  # PYSEC-2026-26 / CVE-2025-33042
     "pydantic>=2.0",
     "pyyaml",
     "psycopg2-binary",
@@ -48,6 +51,7 @@ scoring = [
     "prometheus-client>=0.20",
     "opentelemetry-sdk>=1.24",
     "fastapi>=0.104",
+    "starlette>=1.0.1",  # PYSEC-2026-161 / GHSA-86qp-5c8j-p5mr
     "uvicorn>=0.24",
     "pybreaker==1.4.1",
     "slowapi>=0.1.9",
@@ -61,6 +65,7 @@ analytics = [
     "duckdb>=1.0",
     "pandas>=2.0",
     "pyiceberg[pyarrow,s3fs]>=0.11",
+    "pyarrow>=23.0.1",  # PYSEC-2026-113 / CVE-2026-25087
 ]
 
 [tool.setuptools.packages.find]
