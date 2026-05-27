@@ -38,7 +38,6 @@ logger = logging.getLogger(__name__)
 
 TOPIC = "txn.api"
 MASKING_LIB_VERSION = "1.0.0"
-VALID_CHANNELS = {"POS", "WEB", "MOBILE", "API"}
 
 _SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
 
@@ -65,7 +64,6 @@ def validate_required_fields(payload: dict) -> list[str]:
         "amount",
         "currency",
         "event_time",
-        "channel",
         "card_number",
         "caller_ip",
         "api_key_id",
@@ -95,10 +93,6 @@ def validate_field_values(payload: dict) -> list[str]:
     if not isinstance(currency, str) or len(currency) != 3:
         errors.append("currency must be a 3-character ISO-4217 code")
 
-    channel = payload.get("channel", "")
-    if channel not in VALID_CHANNELS:
-        errors.append(f"channel must be one of {sorted(VALID_CHANNELS)}")
-
     if not payload.get("api_key_id"):
         errors.append("api_key_id must not be empty")
 
@@ -125,8 +119,9 @@ def validate_field_values(payload: dict) -> list[str]:
 class TransactionEventBuilder:
     """Builds a validated, masked event dict matching txn-api-v1.avsc."""
 
-    def __init__(self, cfg: MaskingConfig) -> None:
+    def __init__(self, cfg: MaskingConfig, channel: str) -> None:
         self._cfg = cfg
+        self._channel = channel
 
     def build(self, raw_payload: dict) -> dict:
         """Apply masking and build the event dict. Raises MaskingError on failure."""
@@ -160,7 +155,7 @@ class TransactionEventBuilder:
             "currency": raw_payload["currency"],
             "event_time": int(raw_payload["event_time"]),
             "processing_time": processing_time,
-            "channel": "API",
+            "channel": self._channel,
             "card_bin": masked.bin6,
             "card_last4": masked.last4,
             "caller_ip_subnet": subnet,
@@ -203,7 +198,7 @@ class ProducerService:
             ipv4_prefix=self._config.ipv4_prefix,
             ipv6_prefix=self._config.ipv6_prefix,
         )
-        self._builder = TransactionEventBuilder(self._masking_cfg)
+        self._builder = TransactionEventBuilder(self._masking_cfg, self._config.channel)
         self._producer: SerializingProducer | None = None
         self._dlq_producer: DLQProducer | None = None
         self._schema_str: str | None = None
@@ -248,7 +243,7 @@ class ProducerService:
         with tracer.start_as_current_span("api.producer.publish") as span:
             transaction_id = raw_payload.get("transaction_id") or str(uuid.uuid4())
             span.set_attribute("transaction_id", transaction_id)
-            span.set_attribute("channel", "API")
+            span.set_attribute("channel", self._config.channel)
             span.set_attribute("topic", TOPIC)
             span.set_attribute("schema_version", "1")
 
@@ -415,6 +410,22 @@ class _RequestHandler(BaseHTTPRequestHandler):
             payload = json.loads(body)
         except json.JSONDecodeError:
             self._respond(400, {"error": "InvalidJSON"})
+            return
+
+        if "channel" in payload:
+            ERRORS_TOTAL.labels(topic=TOPIC, error_type="ValidationError").inc()
+            SCHEMA_VALIDATION_ERRORS.labels(topic=TOPIC, error_type="ValidationError").inc()
+            fields = ["channel is not an accepted request field"]
+            logger.warning(
+                "validation_failed",
+                extra={
+                    "component": "api-producer",
+                    "level": "WARNING",
+                    "event": "validation_failed",
+                    "fields": fields,
+                },
+            )
+            self._respond(400, {"error": "ValidationError", "fields": fields})
             return
 
         try:

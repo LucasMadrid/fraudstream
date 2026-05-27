@@ -28,7 +28,6 @@ VALID_PAYLOAD = {
     "api_key_id": "key_abc123",
     "oauth_scope": "transactions:write",
     "event_time": int(time.time() * 1000),
-    "channel": "API",
 }
 
 
@@ -75,7 +74,7 @@ def test_validate_fields_zero_amount():
 
 def test_builder_masking_error_on_bad_ip():
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     bad = {**VALID_PAYLOAD, "caller_ip": "not-an-ip"}
     with pytest.raises(MaskingError, match="IP masking"):
         builder.build(bad)
@@ -83,7 +82,7 @@ def test_builder_masking_error_on_bad_ip():
 
 def test_builder_optional_geo_fields():
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     payload = {**VALID_PAYLOAD, "geo_lat": 51.5, "geo_lon": -0.1}
     event = builder.build(payload)
     assert event["geo_lat"] == 51.5
@@ -92,7 +91,7 @@ def test_builder_optional_geo_fields():
 
 def test_builder_auto_generates_transaction_id():
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "transaction_id"}
     event = builder.build(payload)
     assert event["transaction_id"]  # UUID auto-generated
@@ -100,7 +99,7 @@ def test_builder_auto_generates_transaction_id():
 
 def test_builder_amount_encoded_as_bytes():
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     event = builder.build(VALID_PAYLOAD)
     assert isinstance(event["amount"], bytes)
 
@@ -414,6 +413,49 @@ def test_http_handler_500_on_masking_error():
 
     assert responses[0][0] == 500
     assert responses[0][1]["error"] == "MaskingError"
+
+
+# ---------------------------------------------------------------------------
+# SD-013 — channel is producer identity, not caller data
+# ---------------------------------------------------------------------------
+
+
+def test_post_with_channel_in_body_returns_400():
+    """SC-002: a request that supplies `channel` is rejected before any other validation."""
+    mock_service = MagicMock()
+
+    handler = _RequestHandler.__new__(_RequestHandler)
+    handler.path = "/v1/transactions"
+    payload = {**VALID_PAYLOAD, "channel": "MOBILE"}
+    body = json.dumps(payload).encode()
+    handler.headers = {"Content-Length": str(len(body))}
+    handler.rfile = BytesIO(body)
+    _RequestHandler.producer_service = mock_service
+
+    responses = []
+    handler._respond = lambda s, b: responses.append((s, b))
+    handler.do_POST()
+
+    assert responses[0][0] == 400
+    assert responses[0][1]["error"] == "ValidationError"
+    assert any("channel" in f for f in responses[0][1]["fields"])
+    mock_service.publish.assert_not_called()
+
+
+def test_event_channel_sourced_from_config():
+    """SC-003: the builder stamps the producer-configured channel onto the event."""
+    cfg = MaskingConfig()
+    payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "channel"}
+    event = TransactionEventBuilder(cfg, "POS").build(payload)
+    assert event["channel"] == "POS"
+
+
+def test_event_channel_ignores_payload_channel_field():
+    """Even if `channel` somehow reaches build(), the builder uses self._channel."""
+    cfg = MaskingConfig()
+    payload = {**VALID_PAYLOAD, "channel": "MOBILE"}
+    event = TransactionEventBuilder(cfg, "WEB").build(payload)
+    assert event["channel"] == "WEB"
 
 
 def test_http_handler_500_on_unexpected_error():

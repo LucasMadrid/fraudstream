@@ -34,7 +34,6 @@ def _valid_payload(pan: str = VALID_PAN, ip: str = VALID_IP) -> dict:
         "api_key_id": "key_test",
         "oauth_scope": "transactions:write",
         "event_time": int(time.time() * 1000),
-        "channel": "API",
     }
 
 
@@ -68,7 +67,7 @@ def test_no_pii_in_raw_bytes(kafka_bootstrap: str):
     ips = ["203.0.113.45", "198.51.100.1", "192.0.2.100"]
 
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
 
     producer = Producer({"bootstrap.servers": kafka_bootstrap})
 
@@ -135,7 +134,7 @@ def test_idempotent_no_duplicate_on_retry(kafka_bootstrap: str):
     time.sleep(1)
 
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     producer = Producer({"bootstrap.servers": kafka_bootstrap, "enable.idempotence": True})
 
     txn_id = str(uuid.uuid4())
