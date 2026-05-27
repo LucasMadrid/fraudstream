@@ -71,10 +71,16 @@ _HOSTING_IPS = [
 ]
 
 # Patterns: one is chosen per suspicious transaction.
-# velocity_burst — same small account pool → accumulates VEL-001
-# high_amount    — amount 800-2000         → VEL-002 / ND-001
-# hosting_ip     — datacenter IP           → ND-004
-_SUSPICIOUS_PATTERNS = ["velocity_burst", "high_amount", "hosting_ip"]
+# velocity_burst        — same small account pool → accumulates VEL-001/VEL-003
+# high_amount           — amount 800-2000         → VEL-002
+# new_device_high_amount — fresh api_key + amount >500 → ND-001
+# new_device_hosting    — fresh api_key + datacenter IP → ND-004
+_SUSPICIOUS_PATTERNS = [
+    "velocity_burst",
+    "high_amount",
+    "new_device_high_amount",
+    "new_device_hosting",
+]
 
 
 def _luhn_complete(partial: str) -> str:
@@ -122,16 +128,21 @@ _RESET_COLOR = "\033[0m"
 def _make_suspicious_payload(pattern: str) -> dict:
     """Return a transaction crafted to trigger one or more fraud rules.
 
-    velocity_burst — targets _SUSPICIOUS_ACCOUNTS to accumulate VEL-001
-    high_amount    — large single amount (800-2000) to trigger VEL-002 / ND-001
-    hosting_ip     — datacenter caller IP to trigger ND-004
+    velocity_burst        — targets _SUSPICIOUS_ACCOUNTS to accumulate VEL-001/VEL-003
+    high_amount           — large single amount (800-2000) to trigger VEL-002
+    new_device_high_amount — fresh api_key_id (device_is_new=True) + amount >500 → ND-001
+    new_device_hosting    — fresh api_key_id (device_is_new=True) + datacenter IP → ND-004
     """
     base = _make_payload()
     if pattern == "velocity_burst":
         base["account_id"] = random.choice(_SUSPICIOUS_ACCOUNTS)
     elif pattern == "high_amount":
         base["amount"] = round(random.uniform(800.0, 2000.0), 2)
-    elif pattern == "hosting_ip":
+    elif pattern == "new_device_high_amount":
+        base["api_key_id"] = str(uuid.uuid4())
+        base["amount"] = round(random.uniform(501.0, 1500.0), 2)
+    elif pattern == "new_device_hosting":
+        base["api_key_id"] = str(uuid.uuid4())
         base["caller_ip"] = random.choice(_HOSTING_IPS)
     return base
 

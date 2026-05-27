@@ -1,19 +1,42 @@
 COMPOSE          := docker compose -f infra/docker-compose.yml
 COMPOSE_SECURITY := docker compose -f infra/docker-compose.security.yml
+COMPOSE_ANALYTICS := docker compose -f infra/docker-compose.yml --profile analytics
 PYTHON           := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3.11)
+PYTEST           := $(if $(wildcard .venv/bin/pytest),.venv/bin/pytest,pytest)
+RUFF             := $(if $(wildcard .venv/bin/ruff),.venv/bin/ruff,ruff)
 export DOCKER_BUILDKIT := 1
 
 ## MinIO credentials for PyIceberg S3FileIO (override for production)
 MINIO_ACCESS_KEY ?= minioadmin
 MINIO_SECRET_KEY ?= minioadmin
 
+## Overridable endpoints (useful for Docker/K8s environments)
+KAFKA_BROKERS    ?= localhost:9092
+ICEBERG_REST_URI ?= http://localhost:8181
+MINIO_ENDPOINT   ?= http://localhost:9000
+
 ## Kafka connector version compatible with PyFlink/Flink 2.x
 KAFKA_CONNECTOR_VERSION := 4.0.1-2.0
 KAFKA_CONNECTOR_URL     := https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/$(KAFKA_CONNECTOR_VERSION)/flink-sql-connector-kafka-$(KAFKA_CONNECTOR_VERSION).jar
 
-.PHONY: infra-up infra-down infra-clean infra-ps infra-logs \
+## Java 11+ required by PyFlink 2.x — always use Java 21, override any shell-exported JAVA_HOME
+JAVA_HOME := $(shell /usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home -v 11 2>/dev/null)
+
+## Shared env block for all Flink/Iceberg targets — avoids repetition
+define FLINK_ENV
+JAVA_HOME=$(JAVA_HOME) \
+AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
+AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
+PYICEBERG_CATALOG__ICEBERG__URI=$(ICEBERG_REST_URI) \
+PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
+PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=$(MINIO_ENDPOINT) \
+PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
+RULES_YAML_PATH=$(PWD)/rules/rules.yaml
+endef
+
+.PHONY: infra-up infra-down infra-clean infra-ps infra-logs infra-ready \
         infra-restart infra-restart-grafana infra-restart-prometheus \
-        topics bootstrap update-geoip download-jars \
+        topics bootstrap update-geoip download-jars validate \
         flink-job flink-job-analytics iceberg-init \
         generate generate-suspicious simulate-alerts consume generate-dlq \
         analytics-counts analytics-join analytics-feast analytics-verify \
@@ -43,6 +66,20 @@ infra-ps:
 infra-logs:
 	$(COMPOSE) logs -f $(SERVICE)
 
+## Poll until Kafka broker and Iceberg REST are accepting connections.
+## bootstrap depends on this so topics are never created against an unready broker.
+infra-ready:
+	@echo "Waiting for Kafka broker..."
+	@until docker exec broker kafka-topics --bootstrap-server $(KAFKA_BROKERS) --list >/dev/null 2>&1; do \
+	    printf '.'; sleep 2; \
+	done
+	@echo " Kafka ready."
+	@echo "Waiting for Iceberg REST..."
+	@until docker exec fraudstream-iceberg-rest curl -sf http://localhost:8181 >/dev/null 2>&1; do \
+	    printf '.'; sleep 2; \
+	done
+	@echo " Iceberg ready."
+
 ## Restart individual services (picks up config changes without full teardown)
 ## make infra-restart-grafana     → reload provisioning mounts
 ## make infra-restart-prometheus  → reload scrape config + alert rules
@@ -64,8 +101,12 @@ infra-restart: infra-restart-prometheus infra-restart-grafana
 infra-security-up:
 	@echo "Starting security test environment (Kafka SASL/TLS)..."
 	$(COMPOSE_SECURITY) up -d
-	@echo "Waiting for Kafka to be ready (this may take 30-60 seconds)..."
-	@sleep 10
+	@echo "Waiting for secure Kafka broker..."
+	@until docker exec broker-secure kafka-topics --bootstrap-server localhost:9093 \
+	    --command-config /etc/kafka/secrets/admin.properties --list >/dev/null 2>&1; do \
+	    printf '.'; sleep 2; \
+	done
+	@echo " ready."
 	$(COMPOSE_SECURITY) ps
 	@echo ""
 	@echo "Security environment ready:"
@@ -92,7 +133,7 @@ infra-security-logs:
 
 topics:
 	@echo "Waiting for Kafka broker..."
-	@until docker exec broker kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1; do \
+	@until docker exec broker kafka-topics --bootstrap-server $(KAFKA_BROKERS) --list >/dev/null 2>&1; do \
 	    printf '.'; sleep 2; \
 	done
 	@echo " ready."
@@ -123,12 +164,23 @@ print('  Done:', os.path.getsize(dest), 'bytes'); \
 ## Starts infra, waits for health, creates topics and registers all schemas.
 ## Run once after cloning or after make infra-clean.
 
-bootstrap: download-jars infra-up topics
+bootstrap: download-jars infra-up infra-ready topics
 	@echo ""
 	@echo "Bootstrap complete. Next steps:"
 	@echo "  make update-geoip   (if infra/geoip/GeoLite2-City.mmdb is missing)"
 	@echo "  make flink-job      (dedicated terminal)"
 	@echo "  make generate       (another terminal)"
+
+# ── Environment validation ────────────────────────────────────────────────
+## Check that prerequisites are present before running any targets.
+
+validate:
+	@echo "Validating environment..."
+	@command -v docker >/dev/null 2>&1 || (echo "ERROR: docker not found"; exit 1)
+	@command -v docker compose >/dev/null 2>&1 || docker compose version >/dev/null 2>&1 || (echo "ERROR: docker compose not found"; exit 1)
+	@$(PYTHON) --version >/dev/null 2>&1 || (echo "ERROR: Python not found at $(PYTHON)"; exit 1)
+	@[ -f infra/docker-compose.yml ] || (echo "ERROR: infra/docker-compose.yml missing"; exit 1)
+	@echo "Environment OK"
 
 # ── GeoIP database ────────────────────────────────────────────────────────
 ## Requires MAXMIND_LICENCE_KEY env var (free at maxmind.com).
@@ -139,11 +191,12 @@ update-geoip:
 	    echo "Error: MAXMIND_LICENCE_KEY is not set. Get a free key at https://www.maxmind.com/en/geolite2/signup"; \
 	    exit 1; \
 	fi
+	@mkdir -p infra/geoip
 	@echo "Downloading GeoLite2-City database..."
 	@tmpdir=$$(mktemp -d) && \
 	  curl -sL \
 	    "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=$${MAXMIND_LICENCE_KEY}&suffix=tar.gz" \
-	    | tar -xz -C $$tmpdir && \
+	    | tar -xz -C $$tmpdir || (rm -rf $$tmpdir; echo "ERROR: download or extract failed"; exit 1); \
 	  find $$tmpdir -name "GeoLite2-City.mmdb" -exec mv {} infra/geoip/GeoLite2-City.mmdb \; && \
 	  rm -rf $$tmpdir
 	@echo "GeoLite2-City.mmdb downloaded to infra/geoip/"
@@ -152,15 +205,9 @@ update-geoip:
 # ── Flink enrichment job ─────────────────────────────────────────────────
 
 flink-job:
-	AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
-	AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
-	PYICEBERG_CATALOG__ICEBERG__URI=http://localhost:8181 \
-	PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
-	PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://localhost:9000 \
-	PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
-	RULES_YAML_PATH=$(PWD)/rules/rules.yaml \
+	$(FLINK_ENV) \
 	$(PYTHON) -m pipelines.processing.job \
-	  --kafka-brokers localhost:9092 \
+	  --kafka-brokers $(KAFKA_BROKERS) \
 	  --input-topic txn.api \
 	  --output-topic txn.enriched \
 	  --geoip-db-path $(PWD)/infra/geoip/GeoLite2-City.mmdb
@@ -173,15 +220,9 @@ flink-job:
 ## Override credentials: MINIO_ACCESS_KEY=x MINIO_SECRET_KEY=y make flink-job-analytics
 
 flink-job-analytics: iceberg-init
-	AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
-	AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
-	PYICEBERG_CATALOG__ICEBERG__URI=http://localhost:8181 \
-	PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
-	PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://localhost:9000 \
-	PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
-	RULES_YAML_PATH=$(PWD)/rules/rules.yaml \
+	$(FLINK_ENV) \
 	$(PYTHON) -m pipelines.processing.job \
-	  --kafka-brokers localhost:9092 \
+	  --kafka-brokers $(KAFKA_BROKERS) \
 	  --input-topic txn.api \
 	  --output-topic txn.enriched \
 	  --geoip-db-path $(PWD)/infra/geoip/GeoLite2-City.mmdb
@@ -193,21 +234,16 @@ flink-job-analytics: iceberg-init
 
 iceberg-init:
 	@echo "Initializing Iceberg tables..."
-	@AWS_ACCESS_KEY_ID=$(MINIO_ACCESS_KEY) \
-	AWS_SECRET_ACCESS_KEY=$(MINIO_SECRET_KEY) \
-	PYICEBERG_CATALOG__ICEBERG__URI=http://localhost:8181 \
-	PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/ \
-	PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://localhost:9000 \
-	PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true \
-	$(PYTHON) scripts/iceberg_init.py
+	@$(FLINK_ENV) \
+	$(PYTHON) scripts/iceberg_init.py || (echo "ERROR: Iceberg init failed"; exit 1)
 
 # ── Analytics persistence verification ───────────────────────────────────
 ## analytics-counts: row counts for both Iceberg tables via DuckDB/PyIceberg
 analytics-counts:
 	@echo "==> enriched_transactions"
-	@$(PYTHON) -c "from analytics.queries.iceberg_reader import load_table; t = load_table('enriched_transactions'); print(f'  rows: {len(t.scan().to_arrow())}')" 2>/dev/null || echo "  (table not found or Iceberg not running)"
+	@$(FLINK_ENV) $(PYTHON) -c "from pyiceberg.catalog import load_catalog; cat = load_catalog('iceberg'); t = cat.load_table('default.enriched_transactions'); print(f'  rows: {t.scan().to_arrow().num_rows}')" 2>/dev/null || echo "  (table not found or Iceberg not running)"
 	@echo "==> fraud_decisions"
-	@$(PYTHON) -c "from analytics.queries.iceberg_reader import load_table; t = load_table('fraud_decisions'); print(f'  rows: {len(t.scan().to_arrow())}')" 2>/dev/null || echo "  (table not found or Iceberg not running)"
+	@$(FLINK_ENV) $(PYTHON) -c "from pyiceberg.catalog import load_catalog; cat = load_catalog('iceberg'); t = cat.load_table('default.fraud_decisions'); print(f'  rows: {t.scan().to_arrow().num_rows}')" 2>/dev/null || echo "  (table not found or Iceberg not running)"
 
 ## analytics-join: join both tables on transaction_id via DuckDB
 analytics-join:
@@ -229,14 +265,14 @@ analytics-verify: analytics-counts analytics-join analytics-feast
 ## analytics-up: start the Analytics tier (Streamlit + DuckDB) alongside Core.
 ## Requires Core tier to be running: make bootstrap first.
 analytics-up:
-	docker compose -f infra/docker-compose.yml --profile analytics up -d --build streamlit
+	$(COMPOSE_ANALYTICS) up -d --build streamlit
 	@echo "Streamlit: http://localhost:8501"
 	@echo "Metrics:   http://localhost:8004/metrics"
 
 ## analytics-down: stop the Analytics tier only; Core tier remains running.
 analytics-down:
-	docker compose -f infra/docker-compose.yml --profile analytics stop streamlit
-	docker compose -f infra/docker-compose.yml --profile analytics rm -f streamlit
+	$(COMPOSE_ANALYTICS) stop streamlit
+	$(COMPOSE_ANALYTICS) rm -f streamlit
 
 # ── Data generation ──────────────────────────────────────────────────────
 ## Runs forever by default (COUNT=0). Override: COUNT=50 DELAY=200 make generate
@@ -292,20 +328,20 @@ consume:
 # ── Python dependencies ──────────────────────────────────────────────────
 
 install:
-	pip install -e ".[dev,processing,scoring]"
+	$(PYTHON) -m pip install -e ".[dev,processing,scoring]"
 
 # ── Tests ─────────────────────────────────────────────────────────────────
 
 test-unit:
-	pytest tests/unit/ --cov=pipelines/processing --cov=pipelines/scoring --cov-fail-under=80 -v
+	$(PYTEST) tests/unit/ --cov=pipelines/processing --cov=pipelines/scoring --cov-fail-under=80 -v
 
 test-integration:
-	pytest -m integration tests/integration/ -v
+	$(PYTEST) -m integration tests/integration/ -v
 
 ## CHB-006: Interface contract tests - Avro/Iceberg schema alignment
 test-contract:
 	@echo "Running CHB-006 interface contract tests..."
-	pytest tests/contract/ tests/contracts/ -v
+	$(PYTEST) tests/contract/ tests/contracts/ -v
 
 test: test-unit test-contract
 
@@ -316,7 +352,7 @@ test: test-unit test-contract
 test-security:
 	@echo "Running TB-001 Kafka SASL/SCRAM security tests..."
 	@echo "Note: Requires security environment running on localhost:9093"
-	pytest tests/security/ -v -m "not skip"
+	$(PYTEST) tests/security/ -v -m "not skip"
 
 # ── Performance Tests (TB-003) ───────────────────────────────────────────────
 ## Run TB-003 performance benchmarks
@@ -327,32 +363,32 @@ test-performance:
 	@echo "Running TB-003 performance benchmarks..."
 	@if [ "$(SLOW)" = "1" ]; then \
 		echo "Including slow tests..."; \
-		pytest tests/performance/ -v; \
+		$(PYTEST) tests/performance/ -v; \
 	else \
 		echo "Skipping slow tests (run with SLOW=1 to include)"; \
-		pytest tests/performance/ -v -m "not slow"; \
+		$(PYTEST) tests/performance/ -v -m "not slow"; \
 	fi
 
 # ── Code Quality (Lint/Format) ───────────────────────────────────────────────
 ## Check code style with ruff (configured in pyproject.toml)
 
 lint:
-	ruff check .
+	$(RUFF) check .
 
 ## Auto-fix code style issues where possible
 
 lint-fix:
-	ruff check --fix .
+	$(RUFF) check --fix .
 
 ## Check code formatting
 
 format:
-	ruff format --check .
+	$(RUFF) format --check .
 
 ## Apply code formatting
 
 format-fix:
-	ruff format .
+	$(RUFF) format .
 
 # ── Help ───────────────────────────────────────────────────────────────────
 ## Show this help message
@@ -361,19 +397,28 @@ help:
 	@echo "FraudStream Makefile Targets"
 	@echo "============================="
 	@echo ""
+	@echo "Workflow (run in order):"
+	@echo "  1. make validate           Check prerequisites (docker, python, compose)"
+	@echo "  2. make bootstrap          Full setup (jars + infra + health-wait + topics)"
+	@echo "  3. make flink-job          Run enrichment pipeline (dedicated terminal)"
+	@echo "  4. make generate           Produce transactions (another terminal)"
+	@echo "  5. make analytics-up       Start Streamlit dashboard (optional)"
+	@echo ""
 	@echo "Infrastructure:"
 	@echo "  make infra-up              Start core infrastructure"
 	@echo "  make infra-down            Stop core infrastructure"
 	@echo "  make infra-clean           Stop and remove volumes"
+	@echo "  make infra-ready           Wait until Kafka + Iceberg are accepting connections"
 	@echo "  make infra-logs            Tail logs (SERVICE=x for specific service)"
 	@echo "  make infra-security-up     Start security test environment (TB-001)"
 	@echo "  make infra-security-down   Stop security test environment"
 	@echo ""
 	@echo "Development:"
+	@echo "  make validate              Check environment prerequisites"
 	@echo "  make bootstrap             Full setup (download-jars + infra-up + topics)"
 	@echo "  make download-jars         Download Flink connector JARs"
 	@echo "  make update-geoip          Download MaxMind GeoIP database"
-	@echo "  make install               Install Python dependencies"
+	@echo "  make install               Install Python dependencies into venv"
 	@echo ""
 	@echo "Flink Jobs:"
 	@echo "  make flink-job             Run enrichment job"
@@ -412,3 +457,6 @@ help:
 	@echo "  SERVICE=broker             Service name for logs"
 	@echo "  MINIO_ACCESS_KEY=x         MinIO credentials"
 	@echo "  MINIO_SECRET_KEY=x         MinIO credentials"
+	@echo "  KAFKA_BROKERS=x:9092       Kafka bootstrap servers (default: localhost:9092)"
+	@echo "  ICEBERG_REST_URI=http://x  Iceberg REST catalog URI (default: http://localhost:8181)"
+	@echo "  MINIO_ENDPOINT=http://x    MinIO S3 endpoint (default: http://localhost:9000)"

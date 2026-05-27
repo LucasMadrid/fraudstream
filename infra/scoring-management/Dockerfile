@@ -10,7 +10,10 @@ RUN pip install --no-cache-dir \
     "prometheus-client==0.25.0" \
     "pyyaml==6.0.3" \
     "redis==5.2.1" \
-    "slowapi==0.1.9"
+    "slowapi==0.1.9" \
+    "opentelemetry-api>=1.24" \
+    "opentelemetry-sdk>=1.24" \
+    "opentelemetry-exporter-otlp-proto-http>=1.24"
 
 COPY . .
 

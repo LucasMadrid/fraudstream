@@ -154,7 +154,7 @@ class TestAlertsConsumerThread:
 
         parsed = fastavro.parse_schema(json.loads(_ALERT_SCHEMA_PATH.read_text()))
         buf = io.BytesIO()
-        fastavro.writer(buf, parsed, [record])
+        fastavro.schemaless_writer(buf, parsed, record)
         return buf.getvalue()
 
     def test_increments_rule_flags_for_matched_rules(self):
