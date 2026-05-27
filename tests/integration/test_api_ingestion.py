@@ -34,7 +34,6 @@ def _valid_payload(pan: str = VALID_PAN, ip: str = VALID_IP) -> dict:
         "api_key_id": "key_test",
         "oauth_scope": "transactions:write",
         "event_time": int(time.time() * 1000),
-        "channel": "API",
     }
 
 

@@ -23,6 +23,14 @@ class ProducerConfig:
         default_factory=lambda: int(os.environ.get("PROMETHEUS_PORT", "8001"))
     )
     log_level: str = field(default_factory=lambda: os.environ.get("LOG_LEVEL", "INFO"))
+    channel: str = field(default_factory=lambda: os.environ.get("PRODUCER_CHANNEL", "API"))
+
+    def __post_init__(self) -> None:
+        valid = {"API", "POS", "WEB", "MOBILE"}
+        if self.channel not in valid:
+            raise ValueError(
+                f"PRODUCER_CHANNEL must be one of {sorted(valid)}, got {self.channel!r}"
+            )
 
     def librdkafka_config(self) -> dict:
         """Return librdkafka producer config dict."""

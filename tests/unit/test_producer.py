@@ -1,9 +1,12 @@
 """Unit tests for the API channel producer (no Kafka required)."""
 
+import os
 import time
+from unittest.mock import patch
 
 import pytest
 
+from pipelines.ingestion.api.config import ProducerConfig
 from pipelines.ingestion.api.producer import (
     MaskingError,
     TransactionEventBuilder,
@@ -13,6 +16,38 @@ from pipelines.ingestion.api.producer import (
     validate_required_fields,
 )
 from pipelines.ingestion.shared.pii_masker import MaskingConfig
+
+_PRODUCER_ENV = {
+    "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
+    "SCHEMA_REGISTRY_URL": "http://localhost:8081",
+}
+
+
+# ---------------------------------------------------------------------------
+# ProducerConfig.channel
+# ---------------------------------------------------------------------------
+
+
+def test_producer_config_channel_defaults_to_api():
+    env = {k: v for k, v in os.environ.items() if k != "PRODUCER_CHANNEL"}
+    env.update(_PRODUCER_ENV)
+    with patch.dict(os.environ, env, clear=True):
+        cfg = ProducerConfig()
+    assert cfg.channel == "API"
+
+
+@pytest.mark.parametrize("channel", ["API", "POS", "WEB", "MOBILE"])
+def test_producer_config_channel_accepts_known_values(channel):
+    with patch.dict(os.environ, {**_PRODUCER_ENV, "PRODUCER_CHANNEL": channel}, clear=True):
+        cfg = ProducerConfig()
+    assert cfg.channel == channel
+
+
+def test_producer_config_channel_rejects_invalid_value():
+    with patch.dict(os.environ, {**_PRODUCER_ENV, "PRODUCER_CHANNEL": "INVALID"}, clear=True):
+        with pytest.raises(ValueError, match="PRODUCER_CHANNEL"):
+            ProducerConfig()
+
 
 VALID_PAYLOAD = {
     "transaction_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
@@ -25,7 +60,6 @@ VALID_PAYLOAD = {
     "api_key_id": "key_abc123",
     "oauth_scope": "transactions:write",
     "event_time": int(time.time() * 1000),
-    "channel": "API",
 }
 
 
@@ -71,12 +105,6 @@ def test_validate_fields_invalid_currency():
         validate_field_values(payload)
 
 
-def test_validate_fields_invalid_channel():
-    payload = {**VALID_PAYLOAD, "channel": "MOBILE_APP"}
-    with pytest.raises(ValidationError, match="channel"):
-        validate_field_values(payload)
-
-
 # ---------------------------------------------------------------------------
 # TransactionEventBuilder
 # ---------------------------------------------------------------------------
@@ -84,7 +112,7 @@ def test_validate_fields_invalid_channel():
 
 def test_builder_produces_masked_event():
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     event = builder.build(VALID_PAYLOAD)
     assert "card_number" not in event
     assert event["card_bin"] == "411111"
@@ -95,7 +123,7 @@ def test_builder_produces_masked_event():
 
 def test_builder_sets_processing_time():
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     before = int(time.time() * 1000)
     event = builder.build(VALID_PAYLOAD)
     after = int(time.time() * 1000)
@@ -106,7 +134,7 @@ def test_builder_rejects_invalid_pan():
     from pipelines.ingestion.shared.pii_masker import InvalidPANError
 
     cfg = MaskingConfig()
-    builder = TransactionEventBuilder(cfg)
+    builder = TransactionEventBuilder(cfg, "API")
     bad = {**VALID_PAYLOAD, "card_number": "1234567890123456"}
     with pytest.raises(InvalidPANError):
         builder.build(bad)
