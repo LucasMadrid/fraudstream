@@ -8,82 +8,6 @@ from pipelines.scoring.types import FraudDecision
 
 logger = logging.getLogger(__name__)
 
-# Zero-value feature defaults used when feature enrichment fails.
-_FEATURE_ZERO_DEFAULTS: dict = {
-    "vel_count_1m": 0,
-    "vel_amount_1m": 0.0,
-    "vel_count_5m": 0,
-    "vel_amount_5m": 0.0,
-    "vel_count_1h": 0,
-    "vel_amount_1h": 0.0,
-    "vel_count_24h": 0,
-    "vel_amount_24h": 0.0,
-    "geo_country": "",
-    "geo_city": "",
-    "geo_network_class": "UNKNOWN",
-    "geo_confidence": 0.0,
-    "device_first_seen": 0,
-    "device_txn_count": 0,
-    "device_known_fraud": False,
-    "prev_geo_country": None,
-    "prev_txn_time_ms": None,
-}
-
-
-class _FeatureEnrichmentFunction:
-    """Flink MapFunction that fetches feature vectors per transaction.
-
-    Holds a FeatureServingClient and merges returned FeatureVector fields
-    into the transaction dict before passing downstream to the rule evaluator.
-    """
-
-    def __init__(self, feature_store_repo_path: str = "storage/feature_store") -> None:
-        self._repo_path = feature_store_repo_path
-        self._client = None
-
-    def open(self, runtime_context=None) -> None:
-        from pipelines.scoring.clients.feature_serving import FeatureServingClient
-
-        self._client = FeatureServingClient(
-            feature_store_repo_path=self._repo_path,
-        )
-        self._client.open()
-
-    def map(self, txn: dict) -> dict:
-        account_id = txn.get("account_id", "")
-        transaction_id = txn.get("transaction_id", "")
-        transaction_timestamp = int(txn.get("event_time", 0))
-
-        fv = self._client.get_features(account_id, transaction_id, transaction_timestamp)
-
-        enriched = dict(txn)
-        enriched.update(
-            {
-                "vel_count_1m": fv.vel_count_1m,
-                "vel_amount_1m": fv.vel_amount_1m,
-                "vel_count_5m": fv.vel_count_5m,
-                "vel_amount_5m": fv.vel_amount_5m,
-                "vel_count_1h": fv.vel_count_1h,
-                "vel_amount_1h": fv.vel_amount_1h,
-                "vel_count_24h": fv.vel_count_24h,
-                "vel_amount_24h": fv.vel_amount_24h,
-                "geo_country": fv.geo_country,
-                "geo_city": fv.geo_city,
-                "geo_network_class": fv.geo_network_class,
-                "geo_confidence": fv.geo_confidence,
-                "device_first_seen": fv.device_first_seen,
-                "device_txn_count": fv.device_txn_count,
-                "device_known_fraud": fv.device_known_fraud,
-                "prev_geo_country": fv.prev_geo_country,
-                "prev_txn_time_ms": fv.prev_txn_time_ms,
-            }
-        )
-        return enriched
-
-    def close(self) -> None:
-        if self._client is not None:
-            self._client.close()
-
 
 def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
     """Attach the rule evaluator and alert sinks to the enriched transaction stream.
@@ -105,37 +29,6 @@ def wire_rule_evaluator(enriched_stream, config, rules):  # pragma: no cover
     from pipelines.scoring.rules.evaluator import RuleEvaluator
     from pipelines.scoring.sinks.iceberg_decisions import IcebergDecisionsSink
     from pipelines.scoring.types import FraudAlert
-
-    # Insert feature enrichment before rule evaluation
-    feature_repo = getattr(config, "feature_store_repo_path", "storage/feature_store")
-
-    class _FlinkFeatureEnrichmentFunction(MapFunction):
-        def open(self, runtime_context):
-            self._fn = _FeatureEnrichmentFunction(feature_store_repo_path=feature_repo)
-            self._fn.open(runtime_context)
-
-        def map(self, value):
-            try:
-                return self._fn.map(value)
-            except Exception as exc:  # noqa: BLE001
-                from pipelines.scoring.metrics import feature_store_fallback_total
-
-                logger.warning(
-                    "Feature enrichment failed for txn=%s — using zero defaults: %s",
-                    value.get("transaction_id", "") if isinstance(value, dict) else "",
-                    exc,
-                )
-                feature_store_fallback_total.labels(
-                    reason="enrichment_error",
-                ).inc()
-                fallback = dict(value) if isinstance(value, dict) else {}
-                fallback.update(_FEATURE_ZERO_DEFAULTS)
-                return fallback
-
-        def close(self):
-            self._fn.close()
-
-    enriched_stream = enriched_stream.map(_FlinkFeatureEnrichmentFunction(), output_type=None)
 
     evaluator = RuleEvaluator(rules)
 

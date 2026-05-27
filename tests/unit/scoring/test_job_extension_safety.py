@@ -7,10 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pipelines.scoring.job_extension import (
-    _FEATURE_ZERO_DEFAULTS,
-    _FeatureEnrichmentFunction,
-)
 from pipelines.scoring.types import FraudDecision
 
 # ---------------------------------------------------------------------------
@@ -84,77 +80,6 @@ class TestEvaluateBadRecord:
 
 
 # ---------------------------------------------------------------------------
-# BUG-JE5: Feature enrichment fallback
-# ---------------------------------------------------------------------------
-
-
-class TestFeatureEnrichmentFallback:
-    """_FlinkFeatureEnrichmentFunction.map() must fall back on errors."""
-
-    def _build_flink_enrichment_fn(self):
-        """Build a _FlinkFeatureEnrichmentFunction-like wrapper with a mock _fn."""
-        # We can't instantiate the real PyFlink MapFunction subclass without
-        # a Flink runtime, but we can test via the module-level
-        # _FeatureEnrichmentFunction + the guard logic.  Instead we import the
-        # inner class pattern and replicate the guarded map.
-        from pipelines.scoring import job_extension as je
-
-        class _FakeFlinkWrapper:
-            def __init__(self):
-                self._fn = MagicMock(spec=_FeatureEnrichmentFunction)
-
-            def map(self, value):
-                try:
-                    return self._fn.map(value)
-                except Exception:  # noqa: BLE001
-                    from pipelines.scoring.metrics import (
-                        feature_store_fallback_total,
-                    )
-
-                    feature_store_fallback_total.labels(
-                        reason="enrichment_error",
-                    ).inc()
-                    fallback = dict(value) if isinstance(value, dict) else {}
-                    fallback.update(je._FEATURE_ZERO_DEFAULTS)
-                    return fallback
-
-        return _FakeFlinkWrapper()
-
-    def test_feature_enrichment_failure_returns_zero_defaults(self):
-        wrapper = self._build_flink_enrichment_fn()
-        wrapper._fn.map.side_effect = RuntimeError("feature store down")
-
-        txn = _make_txn()
-        result = wrapper.map(txn)
-
-        # Original fields preserved
-        assert result["transaction_id"] == "txn-test-001"
-        assert result["amount"] == 100.0
-
-        # Zero-value defaults applied
-        for key, default in _FEATURE_ZERO_DEFAULTS.items():
-            assert result[key] == default, f"{key} mismatch"
-
-    def test_feature_enrichment_failure_increments_fallback_counter(self):
-        wrapper = self._build_flink_enrichment_fn()
-        wrapper._fn.map.side_effect = RuntimeError("timeout")
-
-        with patch("pipelines.scoring.metrics.feature_store_fallback_total") as mock_counter:
-            mock_labels = MagicMock()
-            mock_counter.labels.return_value = mock_labels
-
-            # Re-build wrapper so it picks up the patched metric
-            wrapper2 = self._build_flink_enrichment_fn()
-            wrapper2._fn.map.side_effect = RuntimeError("timeout")
-            wrapper2.map(_make_txn())
-
-            mock_counter.labels.assert_called_once_with(
-                reason="enrichment_error",
-            )
-            mock_labels.inc.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
 # BUG-JE2: Kafka emit ValueError safety
 # ---------------------------------------------------------------------------
 
@@ -195,3 +120,25 @@ class TestKafkaEmitValueError:
                 kafka_sink.emit(MagicMock())
             except (ValueError, TypeError, AttributeError):
                 pass
+
+
+# ---------------------------------------------------------------------------
+# SC-002: Live features reach rule evaluator unmodified (ADR-005 compliance)
+# ---------------------------------------------------------------------------
+
+
+class TestLiveFeaturesReachEvaluator:
+    def test_deleted_symbols_absent_from_module(self):
+        """Feast enrichment symbols must not exist in job_extension (SC-001)."""
+        import pipelines.scoring.job_extension as je
+
+        assert not hasattr(je, "_FeatureEnrichmentFunction")
+        assert not hasattr(je, "_FEATURE_ZERO_DEFAULTS")
+
+    def test_no_feast_reference_in_job_extension(self):
+        """job_extension source must contain no feast reference (SC-002)."""
+        import inspect
+
+        import pipelines.scoring.job_extension as je
+
+        assert "feast" not in inspect.getsource(je)
