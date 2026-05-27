@@ -1,0 +1,77 @@
+# Agent Assignments
+# Feature: Document & Contain apache-flink ↔ analytics pyarrow Conflict (#31)
+# Branch: 027-flink-pyarrow-conflict
+# Generated: 2026-05-27
+# Command: /speckit.agent-assign.assign
+# Agent family: VoltAgent (primary) + one local user-level agent (qa-expert)
+#                — selected by user via AskUserQuestion ("VoltAgent — better doc-work matches")
+
+agents_scanned:
+  - name: "voltagent-infra:devops-engineer"
+    source: "voltagent"
+    description: "Infrastructure automation, git/env hygiene, lock-file edits"
+  - name: "voltagent-meta:knowledge-synthesizer"
+    source: "voltagent"
+    description: "Pattern extraction + decision synthesis across artifacts (ADR-flavored work)"
+  - name: "voltagent-domains:api-documenter"
+    source: "voltagent"
+    description: "Markdown documentation authoring with audience-tailored structure"
+  - name: "voltagent-infra:security-engineer"
+    source: "voltagent"
+    description: "Security policy authoring, vulnerability exception rationale"
+  - name: "voltagent-infra:deployment-engineer"
+    source: "voltagent"
+    description: "CI/CD pipeline, branch/commit/PR/release workflow"
+  - name: "voltagent-lang:python-pro"
+    source: "voltagent"
+    description: "Type-safe Python tooling (ruff, pytest invocation)"
+  - name: "qa-expert"
+    source: "user"
+    description: "Quality assurance — structural verification, gap analysis"
+
+assignments:
+  T001:
+    agent: "voltagent-infra:devops-engineer"
+    reason: "Git working-tree hygiene check"
+  T002:
+    agent: "voltagent-meta:knowledge-synthesizer"
+    reason: "Inventory existing ADR style — pattern extraction across prior decision records"
+  T003:
+    agent: "voltagent-infra:devops-engineer"
+    reason: "Filesystem inventory to confirm ADR-015 number availability"
+  T004:
+    agent: "voltagent-meta:knowledge-synthesizer"
+    reason: "Author ADR-015 — synthesize problem/decision/consequences narrative from spec, research, and issue #31"
+  T005:
+    agent: "voltagent-domains:api-documenter"
+    reason: "README install section — onboarding documentation with audience-tailored install recipes"
+  T006:
+    agent: "voltagent-infra:security-engineer"
+    reason: "Author SECURITY.md — vulnerability exception rationale with revisit signal"
+  T007:
+    agent: "voltagent-infra:devops-engineer"
+    reason: "Prepend advisory header to uv.lock — lock-file metadata edit"
+  T008:
+    agent: "qa-expert"
+    reason: "Structural verification — ADR-015 required headings present"
+  T009:
+    agent: "qa-expert"
+    reason: "Structural verification — README links to ADR-015 + says 'mutually exclusive'"
+  T010:
+    agent: "qa-expert"
+    reason: "Structural verification — SECURITY.md PYSEC-2026-113 subsections present"
+  T011:
+    agent: "qa-expert"
+    reason: "Structural verification — uv.lock advisory header present, no other line changes"
+  T012:
+    agent: "voltagent-lang:python-pro"
+    reason: "Preservation gate — ruff check + pytest with coverage gate"
+  T013:
+    agent: "voltagent-infra:deployment-engineer"
+    reason: "Bundle commit with Closes #31 trailer — release workflow"
+  T014:
+    agent: "voltagent-infra:deployment-engineer"
+    reason: "Push branch + open PR + monitor CI — deployment orchestration"
+  T015:
+    agent: "voltagent-infra:deployment-engineer"
+    reason: "Post-merge issue #31 closure verification"

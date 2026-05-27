@@ -67,8 +67,17 @@
 ## 🚀 Quick Start
 
 ```bash
-# 1. Install Python dependencies
-pip install -e ".[processing,scoring]"
+# 1. Install Python dependencies — pick ONE recipe depending on the area you're
+#    working on. The [processing,scoring] and [analytics] extras families are
+#    mutually exclusive in a single venv (apache-flink pins pyarrow<21 while
+#    analytics requires pyarrow>=23 for PYSEC-2026-113). See
+#    docs/adr/ADR-015-PER-EXTRAS-INSTALL-TOPOLOGY.md for the full rationale.
+
+# For ingestion / processing / scoring work:
+pip install -e ".[dev,processing,scoring]"
+
+# OR for analytics / Streamlit work:
+pip install -e ".[dev,analytics]"
 
 # 2. Start all infrastructure + create Kafka topics
 make bootstrap

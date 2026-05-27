@@ -1,3 +1,11 @@
+# STATUS: ADVISORY (as of 2026-05-27)
+#
+# This lock file cannot currently be regenerated because the combined extras
+# set hits an unresolvable apache-flink (pyarrow<21) vs analytics (pyarrow>=23)
+# constraint conflict. CI installs via `pip install -e ".[...]"` and does not
+# consult this file, so the lock is not load-bearing for green/red CI status.
+# See docs/adr/ADR-015-PER-EXTRAS-INSTALL-TOPOLOGY.md for the full rationale.
+
 version = 1
 revision = 3
 requires-python = ">=3.11"
