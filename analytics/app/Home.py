@@ -1,11 +1,8 @@
-"""FraudStream Analytics home page — starts the Kafka consumer daemon and metrics server."""
-
-import os
+"""FraudStream Analytics home page."""
 
 import streamlit as st
 
-from analytics.consumers.kafka_consumer import AnalyticsKafkaConsumer
-from analytics.consumers.metrics import start_metrics_server
+from analytics.app._consumer import get_consumer
 
 st.set_page_config(
     page_title="FraudStream Analytics",
@@ -13,22 +10,7 @@ st.set_page_config(
     layout="wide",
 )
 
-BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-try:
-    METRICS_PORT = int(os.environ.get("METRICS_PORT", "8004"))
-except ValueError:
-    METRICS_PORT = 8004
-
-# Start Prometheus metrics server once per process
-start_metrics_server(METRICS_PORT)
-
-# Start the Kafka consumer thread once per Streamlit session
-if "consumer" not in st.session_state:
-    consumer = AnalyticsKafkaConsumer(bootstrap_servers=BOOTSTRAP)
-    consumer.start()
-    st.session_state["consumer"] = consumer
-
-consumer: AnalyticsKafkaConsumer = st.session_state["consumer"]
+consumer = get_consumer()
 
 st.title("FraudStream Analytics")
 
@@ -53,11 +35,11 @@ Use the sidebar to navigate:
 | Page | Description |
 |------|-------------|
 | **Live Feed** | Real-time fraud alerts from `txn.fraud.alerts` |
-| **Fraud Rate** | Historical fraud rate trends via Trino/Iceberg |
+| **Fraud Rate** | Historical fraud rate trends via Iceberg |
 | **Rule Triggers** | Rule leaderboard and trigger history |
 | **Model Compare** | Side-by-side model version comparison |
 | **DLQ Inspector** | Dead-letter queue browser |
 """
 )
 
-st.caption(f"Metrics exposed at `:{METRICS_PORT}/metrics` · Consumer group `analytics.dashboard`")
+st.caption("Metrics exposed at `:8004/metrics` · Consumer group `analytics.dashboard`")

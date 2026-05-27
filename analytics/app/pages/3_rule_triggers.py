@@ -1,4 +1,4 @@
-"""Rule trigger leaderboard — historical rule frequency from Trino v_rule_triggers."""
+"""Rule trigger leaderboard — historical rule frequency from Iceberg via DuckDB."""
 
 import streamlit as st
 
@@ -19,9 +19,9 @@ top_n = st.sidebar.slider("Top N rules", min_value=5, max_value=50, value=20)
 # ── Leaderboard ───────────────────────────────────────────────────────────────
 st.subheader(f"Top {top_n} Rules — last {days} days")
 try:
-    lb = rule_leaderboard(days=days, top_n=top_n)
+    lb = rule_leaderboard(hours=days * 24, top_n=top_n)
 except Exception as e:
-    st.error(f"Trino query failed: {e}")
+    st.error(f"Query failed: {e}")
     st.stop()
 
 if lb.empty:
@@ -50,9 +50,9 @@ rule_options = lb["rule_name"].tolist() if not lb.empty else []
 if rule_options:
     selected = st.selectbox("Select rule", rule_options)
     try:
-        daily = rule_trigger_daily(rule_name=selected, days=days)
+        daily = rule_trigger_daily(rule_name=selected, hours=days * 24)
     except Exception as e:
-        st.error(f"Trino query failed: {e}")
+        st.error(f"Query failed: {e}")
     else:
         if daily.empty:
             st.info("No daily data for this rule.")

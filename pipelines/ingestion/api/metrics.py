@@ -38,15 +38,17 @@ SCHEMA_VALIDATION_ERRORS = Counter(
     labelnames=["topic", "error_type"],
 )
 
-_metrics_server_started = False
+_STARTED_ENV_KEY = "_FRAUDSTREAM_INGESTION_METRICS_STARTED"
 
 
 def start_metrics_server(port: int | None = None) -> None:
     """Start the Prometheus HTTP scrape endpoint (idempotent)."""
-    global _metrics_server_started
-    if _metrics_server_started:
+    if os.environ.get(_STARTED_ENV_KEY):
         return
     effective_port = port or int(os.environ.get("PROMETHEUS_PORT", "8001"))
-    start_http_server(effective_port)
-    _metrics_server_started = True
+    try:
+        start_http_server(effective_port)
+    except OSError:
+        pass  # port already bound by a sibling or prior process
+    os.environ[_STARTED_ENV_KEY] = "1"
     logger.info("prometheus_metrics_server_started", extra={"port": effective_port})

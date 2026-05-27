@@ -262,17 +262,20 @@ services:
       - "8501:8501"
       - "8004:8004"
     volumes:
-      - ../analytics:/app/analytics:ro
-      - ../pipelines:/app/pipelines:ro
+      - ../analytics:/opt/app/analytics:ro
+      - ../pipelines:/opt/app/pipelines:ro
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=broker:29092
       - SCHEMA_REGISTRY_URL=http://schema-registry:8081
-      - PYTHONPATH=/app
+      - PYTHONPATH=/opt/app
       - DLQ_TOPIC=txn.api.dlq
       - PYICEBERG_CATALOG__ICEBERG__URI=http://iceberg-rest:8181
       - PYICEBERG_CATALOG__ICEBERG__WAREHOUSE=s3://fraudstream-lake/
       - PYICEBERG_CATALOG__ICEBERG__S3__ENDPOINT=http://minio:9000
       - PYICEBERG_CATALOG__ICEBERG__S3__PATH_STYLE_ACCESS=true
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - AWS_REGION=us-east-1
     depends_on:
       broker:
         condition: service_healthy

@@ -66,7 +66,7 @@ class AlertKafkaSink:
             self._dlq_schema = fastavro.parse_schema(json.loads(_DLQ_SCHEMA_PATH.read_text()))
 
     def _serialise(self, alert: FraudAlert) -> bytes:
-        """Serialise FraudAlert to Avro bytes."""
+        """Serialise FraudAlert to schemaless Avro bytes."""
         import fastavro
 
         self._load_schemas()
@@ -78,11 +78,11 @@ class AlertKafkaSink:
             "evaluation_timestamp": alert.evaluation_timestamp,
         }
         buf = io.BytesIO()
-        fastavro.writer(buf, self._parsed_schema, [record])
+        fastavro.schemaless_writer(buf, self._parsed_schema, record)
         return buf.getvalue()
 
     def _serialise_dlq(self, alert: FraudAlert, error_type: str, error_message: str) -> bytes:
-        """Serialise a failed alert to DLQ Avro bytes."""
+        """Serialise a failed alert to schemaless DLQ Avro bytes."""
         import fastavro
 
         self._load_schemas()
@@ -97,7 +97,7 @@ class AlertKafkaSink:
             "failed_at": int(time.time() * 1000),
         }
         buf = io.BytesIO()
-        fastavro.writer(buf, self._dlq_schema, [record])
+        fastavro.schemaless_writer(buf, self._dlq_schema, record)
         return buf.getvalue()
 
     def _on_delivery(self, err, msg, alert: FraudAlert) -> None:  # noqa: ARG002

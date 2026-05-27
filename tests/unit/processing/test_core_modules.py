@@ -161,7 +161,7 @@ class TestEnrichedRecordAssembler:
 
         assembler = EnrichedRecordAssembler()
         record = assembler.assemble(self._make_txn(), self._velocity(), self._geo(), self._device())
-        # 38 fields per enriched-txn-v1.avsc (36 original + prev_geo_country + prev_txn_time_ms)
+        # 40 fields: 36 schema + prev_geo_country + prev_txn_time_ms + device_is_new + txn_amount
         expected_fields = {
             "transaction_id",
             "account_id",
@@ -196,6 +196,8 @@ class TestEnrichedRecordAssembler:
             "device_known_fraud",
             "prev_geo_country",
             "prev_txn_time_ms",
+            "device_is_new",
+            "txn_amount",
             "enrichment_time",
             "enrichment_latency_ms",
             "processor_version",

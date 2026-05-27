@@ -36,7 +36,8 @@ Each transaction source (POS, web, mobile, API) is treated as an independent cha
 - Topics: `txn.pos`, `txn.web`, `txn.mobile`, `txn.api` — no unified raw topic  
 - Channel-specific features (device fingerprint for mobile, 3DS result for web) are enriched in the channel's own Flink job  
 - Fraud thresholds and model versions are configured per channel; a single global threshold is prohibited  
-- Cross-channel aggregations (e.g., velocity across all channels for one account) are computed in a dedicated enrichment step downstream of channel topics
+- Cross-channel aggregations (e.g., velocity across all channels for one account) are computed in a dedicated enrichment step downstream of channel topics  
+- **Producer-assigned channel identity**: The `channel` field on every transaction event is assigned by the producer at publish time — it is NOT a caller-supplied request field and MUST NOT appear in the ingestion API request schema. Each channel has exactly one dedicated producer type (e.g., the API producer always publishes `"channel": "API"`); the producer reads its channel identity from config or an environment variable at startup. Multiple producer instances of the same channel may run concurrently for horizontal scaling. A request carrying a `channel` field must be rejected with HTTP 400.
 
 ### V. Defense in Depth — Rules Before Models
 The scoring pipeline always applies a deterministic rule engine before invoking the ML model.  
@@ -45,8 +46,8 @@ The scoring pipeline always applies a deterministic rule engine before invoking 
 - If the ML serving layer is unavailable, the rule engine alone issues the decision — the pipeline never stalls or passes events silently; the circuit breaker MUST open within **3 consecutive failed inference calls or 5 seconds of sustained failure**, whichever comes first, and MUST be verified by an integration test that kills the model server and asserts rule-only decisions are issued within that window  
 - Rule changes require a unit test proving the new rule fires on a crafted fraudulent event and does not fire on a crafted legitimate event  
 - **Rule configuration**: Rules are defined in `rules/rules.yaml` and loaded by `RuleLoader` at job startup with full Pydantic validation; an invalid YAML is fatal — the job refuses to start rather than silently using defaults  
-- **Operational rule promotion/demotion**: The Management API (`POST /rules/{rule_id}/promote`, `POST /rules/{rule_id}/demote`) is the only permitted mechanism for changing rule mode at runtime without a job restart; direct file edits require a restart  
-- **Hot-reload (PLANNED — v2)**: Rule updates via `txn.rules.config` Kafka topic (compacted, one record per rule ID) are deferred to Phase 2; until then, threshold changes require a `RuleLoader` reload triggered via the Management API or a job restart
+- **Operational rule promotion/demotion (v1 — restart required)**: The Management API (`POST /rules/{rule_id}/promote`, `POST /rules/{rule_id}/demote`) updates `rules.yaml` on disk and its own in-memory state. It does NOT propagate changes to the running Flink job — the Flink `RuleEvaluator` is loaded once at startup and is never notified. Rule mode changes take effect only on the next Flink job restart. The `config_event_published` field in the API response is always `False` in v1. A 200 OK from the promote/demote endpoint does NOT mean the running pipeline has adopted the change — operators must restart the job to activate it.  
+- **Hot-reload (PLANNED — v2)**: Rule updates via `txn.rules.config` Kafka topic (compacted, one record per rule ID). The Flink job will consume this topic and call `RuleEvaluator.reload()` under a lock, making mode changes take effect without a restart. Until v2 ships, job restart is the only correct activation path.
 
 ### VI. Immutable Event Log
 Raw events are never mutated or deleted after they reach the event store.  
@@ -54,7 +55,9 @@ Raw events are never mutated or deleted after they reach the event store.
 - All enrichment and decisions are stored in separate derived tables, joined by `transaction_id`  
 - The event store is the source of truth for model retraining, audit, and dispute resolution  
 - Retention policy: raw events retained for 7 years (regulatory minimum); hot store (Redis) TTL is 24 hours  
-- **Operational review store (narrow exception)**: A PostgreSQL `fraud_alerts` table is permitted as a secondary operational store for alert review status (`pending` / `confirmed-fraud` / `false-positive`) and reviewer workflow. This is NOT the event store — it holds mutable review state only, not raw events. It MUST NOT be used as a substitute for Iceberg for any analytics or training query. Schema: `transaction_id` (PK), `account_id`, `matched_rule_names` (array), `severity`, `evaluation_timestamp`, `status`, `reviewed_by` (nullable), `reviewed_at` (nullable)
+- **Operational review store (narrow exception)**: A PostgreSQL `fraud_alerts` table is permitted as a secondary operational store for alert triage. This is NOT the event store — it holds mutable review state only, not raw events. It MUST NOT be used as a substitute for Iceberg for any analytics or training query.  
+  - **v1 schema (live)**: `transaction_id` (PK), `account_id`, `matched_rule_names` (array), `severity`, `evaluation_timestamp` — no status lifecycle fields; all alerts remain at implicit `pending` state.  
+  - **v2 schema (planned — investigator UI prerequisite)**: Adds `status` (`pending` / `confirmed_fraud` / `false_positive` / `escalated`), `reviewed_by` (nullable), `reviewed_at` (nullable), `status_updated_at`. Status transitions are written via the investigator UI API only — no direct DB writes. Until v2 ships, `FraudAlertRecord` (the type carrying `status`) is not constructed in production and must not be treated as live.
 
 ### VII. PII Minimization at the Edge
 Sensitive fields are masked at the Kafka producer, before the event enters any pipeline component.  
@@ -119,9 +122,16 @@ A dedicated, independent consumer component owns all reporting and interactive a
 - The analytics service is non-critical-path: its unavailability MUST NOT affect fraud scoring SLOs
 
 ### XI. Feature Serving Contract (NON-NEGOTIABLE)
-The online feature store is a first-class pipeline component — it is read on the scoring hot path and its availability, latency, and correctness directly affect the 100ms decision budget.  
+The online feature store is a first-class pipeline component for any scoring consumer that does not have direct access to enriched transaction records.
+
+**Two distinct scoring paths — different feature source, same SLO intent:**
+
+- **Co-located scoring path (current architecture)**: The rule evaluator runs inside the Flink enrichment job. By the time `wire_rule_evaluator` is called, the `EnrichedTransaction` dict already carries all velocity, geolocation, and device features computed moments earlier by the enrichment operators. The co-located scoring path MUST read features directly from the `EnrichedTransaction` dict — it MUST NOT call the online feature store. Calling Feast from this path is redundant and dangerous: a 3ms timeout would replace live features with zero-value defaults, causing rules to miss real fraud signals even though the correct values are already in the record. See ADR-005.
+- **Standalone scoring path (future — if scoring is ever extracted into an independent Kafka consumer)**: This path has no access to enrichment operator state and MUST call the online feature store. All SLO requirements below apply exclusively to this path.
+
+**Online feature store SLOs (standalone path and all external consumers):**
 - **Read path SLO**: Online feature retrieval MUST complete within **2ms at p99** per lookup; this is a hard sub-slice of the 5ms hot store allocation in Principle II — a retrieval exceeding 2ms is treated as a budget breach, not a warning  
-- **Client timeout and fallback**: The scoring engine MUST set a client-side timeout of **3ms** on every online store read; on timeout or store unavailability, the engine MUST fall back to zero-valued features (not stale features, not a request failure) and MUST increment a `feature_store_fallback_total` counter — silent fallback to stale values is prohibited because stale velocity counts can suppress legitimate fraud signals  
+- **Client timeout and fallback**: The standalone scoring engine MUST set a client-side timeout of **3ms** on every online store read; on timeout or store unavailability, the engine MUST fall back to zero-valued features (not stale features, not a request failure) and MUST increment a `feature_store_fallback_total` counter — silent fallback to stale values is prohibited because stale velocity counts can suppress legitimate fraud signals  
 - **Staleness bound**: Features read from the online store MUST reflect an enrichment cycle completed within the last **30 seconds**; if staleness of any feature exceeds this bound (detectable via `feature_materialization_lag_ms`), a Prometheus alert fires before the next model deployment  
 - **Write path ownership**: The online store is written exclusively by the Feast materialization push in the enrichment job — no other component may write feature values directly; the scoring engine is strictly read-only relative to the store  
 - **Cold-start policy**: On pipeline startup or Flink job recovery, the online store may be empty or stale; the scoring engine MUST treat a cache miss as zero-valued features (not an error) and log each miss as a `feature_store_miss` event — the rule engine still fires on transaction fields available in the record itself  
@@ -216,8 +226,8 @@ Partitioned by `event_timestamp` (daily). `transaction_id` is the deduplication 
   "fraud_score":     "float [0.0–1.0]",
   "rule_triggers":   "array<string>",
   "model_version":   "string",
-  "decision_time":   "epoch_ms   (used for Iceberg partitioning by day)",
-  "latency_ms":      "int",
+  "decided_at_ms":   "epoch_ms   (when the decision was produced — used for Iceberg partitioning by day; renamed from decision_time per SD-005)",
+  "latency_ms":      "int        (rule-evaluation-only wall-clock time; hardcoded 0.0 in v1 until SD-002 is resolved)",
   "schema_version":  "string"
 }
 ```
@@ -488,7 +498,7 @@ These decisions are architectural law — they represent choices made with full 
 - [ ] Schema compatibility mode — Schema Registry compatibility set to `BACKWARD_TRANSITIVE` for all FraudStream subjects; verified before first production topic registration
 - [ ] Non-breaking schema additions tested — `tests/contract/` passes for both backward (new producer, old consumer) and forward (old producer, new consumer) directions before any schema version is promoted
 - [ ] `txn.enriched` Avro migration complete — JSON drift resolved; topic produces Avro before v2.0 production promotion (hard deadline per Principle III)
-- [ ] Online feature store read SLO — Feast Redis read p99 < 2ms verified under 2× expected peak load; `feature_store_fallback_total` counter is zero under normal operation
+- [ ] Online feature store read SLO — Feast Redis read p99 < 2ms verified under 2× expected peak load; `feature_store_fallback_total` counter is zero under normal operation *(applies to standalone scoring consumers only — co-located scoring path reads from EnrichedTransaction dict, not Feast; see Principle XI and ADR-005)*
 - [ ] Feature staleness alert — `feature_materialization_lag_ms` Prometheus alert fires correctly when lag exceeds 30 seconds; verified in staging
 - [ ] Cold-start behaviour verified — pipeline recovery test confirms `feature_store_miss` events are logged and zero-valued fallback is applied without scoring errors or latency spikes
 - [ ] Production Redis separation — online feature store and hot store run on separate Redis instances in staging/production; shared-instance configuration is local-only
@@ -509,4 +519,4 @@ All pull requests must include a checklist item confirming compliance with the r
 
 ---
 
-**Version**: 1.8.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-05-10
+**Version**: 1.9.0 | **Ratified**: 2026-03-30 | **Last Amended**: 2026-05-13

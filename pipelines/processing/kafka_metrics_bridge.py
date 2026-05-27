@@ -104,7 +104,7 @@ def _alerts_consumer_thread(
                     logger.debug("Metrics bridge (alerts) kafka error: %s", msg.error())
                     continue
                 try:
-                    record = next(fastavro.reader(io.BytesIO(msg.value()), parsed_schema))
+                    record = fastavro.schemaless_reader(io.BytesIO(msg.value()), parsed_schema)
                     severity = record.get("severity", "low")
                     if not isinstance(severity, str):
                         severity = str(severity)

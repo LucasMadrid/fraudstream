@@ -175,7 +175,7 @@ def _assemble_record(
     enrichment_time,
     enrichment_latency_ms,
 ) -> dict:
-    """Build the 38-field EnrichedTransactionEvent dict."""
+    """Build the 40-field EnrichedTransactionEvent dict."""
     return {
         "transaction_id": txn.transaction_id,
         "account_id": txn.account_id,
@@ -210,6 +210,8 @@ def _assemble_record(
         "device_known_fraud": device_dict.get("device_known_fraud"),
         "prev_geo_country": device_dict.get("prev_geo_country"),
         "prev_txn_time_ms": device_dict.get("prev_txn_time_ms"),
+        "device_is_new": (device_dict.get("device_txn_count") or 0) == 1,
+        "txn_amount": txn.amount,
         "enrichment_time": enrichment_time,
         "enrichment_latency_ms": enrichment_latency_ms,
         "processor_version": _PROCESSOR_VERSION,

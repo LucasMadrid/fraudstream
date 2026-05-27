@@ -15,6 +15,7 @@ dependencies = [
     "opentelemetry-sdk>=1.24",
     "opentelemetry-exporter-otlp-proto-http>=1.24",
     "prometheus-client>=0.20",
+    "urllib3>=2.7.0",  # CVE-2026-44431, CVE-2026-44432
 ]
 
 [project.optional-dependencies]
