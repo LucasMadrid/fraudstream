@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from datetime import datetime, timezone
 
 import pybreaker
 from prometheus_client import Counter, Gauge
@@ -23,9 +24,9 @@ ml_circuit_breaker_state = Gauge(
     "Current ML circuit breaker state (1=current, 0=not current)",
     labelnames=["state"],
 )
-ml_fallback_decisions_total = Counter(
-    "ml_fallback_decisions_total",
-    "Total ML scoring decisions made in fallback mode (circuit open)",
+ml_circuit_open_calls_total = Counter(
+    "ml_circuit_open_calls_total",
+    "Total calls that arrived while the ML circuit was OPEN",
 )
 
 # Initialize all states to 0
@@ -34,19 +35,30 @@ for state in ["closed", "open", "half_open"]:
 
 
 class FraudCircuitBreakerListener(pybreaker.CircuitBreakerListener):
-    """Updates Prometheus metrics on circuit breaker state transitions."""
+    """Updates Prometheus metrics on state transitions and records the most-recent
+    OPEN-transition timestamp + last observed failure timestamp (SD-024)."""
+
+    def __init__(self) -> None:
+        self.opened_at: datetime | None = None
+        self.last_failure_time: datetime | None = None
 
     def state_change(self, cb: pybreaker.CircuitBreaker, old_state: str, new_state: str) -> None:
-        """Update gauge when circuit state changes."""
-        # Set new state to 1, all others to 0
+        """Update gauge + record opened_at on entry to OPEN."""
         for state in ["closed", "open", "half_open"]:
             ml_circuit_breaker_state.labels(state=state).set(1 if state == new_state else 0)
         logger.info("Circuit breaker state changed: %s -> %s", old_state, new_state)
 
+        if new_state == "open" and old_state != new_state:
+            self.opened_at = datetime.now(timezone.utc)
+
+    def failure(self, cb: pybreaker.CircuitBreaker, exc: BaseException) -> None:
+        """Record every observed failure, regardless of resulting state."""
+        self.last_failure_time = datetime.now(timezone.utc)
+
     def before_call(self, cb: pybreaker.CircuitBreaker, func, *args, **kwargs) -> None:
-        """Increment fallback counter when circuit is open."""
+        """Increment counter when a call lands on an open circuit."""
         if cb.current_state == "open":
-            ml_fallback_decisions_total.inc()
+            ml_circuit_open_calls_total.inc()
 
 
 class MLCircuitBreaker:
@@ -64,10 +76,11 @@ class MLCircuitBreaker:
         self.config = config
         self._executor = ThreadPoolExecutor(max_workers=1)
 
+        self.listener = FraudCircuitBreakerListener()
         self._cb = pybreaker.CircuitBreaker(
             fail_max=config.cb_error_threshold,
             reset_timeout=config.cb_open_seconds,
-            listeners=[FraudCircuitBreakerListener()],
+            listeners=[self.listener],
         )
         # Register the client.score method with the circuit breaker
         self._cb_wrapped_score = self._cb(self.client.score)
@@ -97,7 +110,8 @@ class MLCircuitBreaker:
 
 
 __all__ = [
+    "FraudCircuitBreakerListener",
     "MLCircuitBreaker",
     "ml_circuit_breaker_state",
-    "ml_fallback_decisions_total",
+    "ml_circuit_open_calls_total",
 ]

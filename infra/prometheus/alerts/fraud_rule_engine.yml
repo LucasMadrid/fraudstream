@@ -45,7 +45,7 @@ groups:
           description: >
             The ML scoring circuit breaker has opened after repeated failures.
             Scoring engine is operating in rule-engine-only fallback mode.
-            Investigate ML serving health and check ml_fallback_decisions_total counter.
+            Investigate ML serving health and check ml_circuit_open_calls_total counter.
           runbook_url: "docs/runbooks/OBSERVABILITY_RUNBOOK.md"
 
       - alert: RuleFPRateHigh

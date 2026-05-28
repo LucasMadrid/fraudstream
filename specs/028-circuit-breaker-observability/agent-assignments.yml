@@ -1,0 +1,74 @@
+# Agent Assignments
+# Feature: Circuit Breaker Observability — Open-State Timestamps & Metric Rename (SD-024)
+# Branch: 028-circuit-breaker-observability
+# Generated: 2026-05-27
+# Command: /speckit.agent-assign.assign
+# Agent family: Local user-level agents (~/.claude/agents/)
+#   — selected by user via AskUserQuestion ("Local user-level (Recommended) — sre-engineer is the natural fit")
+
+agents_scanned:
+  - name: "sre-engineer"
+    source: "user"
+    description: "SRE — SLOs, error budgets, fault-tolerant systems, observability primitives, listener / circuit-breaker patterns"
+  - name: "python-pro"
+    source: "user"
+    description: "Python production code — class APIs, async patterns, type coverage, pytest execution"
+  - name: "qa-expert"
+    source: "user"
+    description: "Test planning + authoring, structural verification, quality metrics"
+  - name: "devops-engineer"
+    source: "user"
+    description: "Infrastructure automation, CI/CD, lint/format tooling, env hygiene"
+  - name: "git-workflow-manager"
+    source: "user"
+    description: "Git workflows, commit hygiene, branching/merging, PR lifecycle"
+
+assignments:
+  T001:
+    agent: "devops-engineer"
+    reason: "Git working-tree hygiene check"
+  T002:
+    agent: "sre-engineer"
+    reason: "Re-read in-scope files (circuit_breaker.py, management_api.py:520-570, test_circuit_breaker.py) — familiarisation with the observability surface"
+  T003:
+    agent: "sre-engineer"
+    reason: "Confirm pybreaker callback API — validates the load-bearing assumption behind the listener design"
+  T004:
+    agent: "qa-expert"
+    reason: "Author 7 RED-phase test methods covering US1 acceptance scenarios — TDD test design"
+  T005:
+    agent: "sre-engineer"
+    reason: "Listener — opened_at, last_failure_time, failure callback, idempotent OPEN guard — circuit-breaker observability primitives"
+  T006:
+    agent: "python-pro"
+    reason: "MLCircuitBreaker.listener public attribute exposure — Python class API surface change"
+  T007:
+    agent: "sre-engineer"
+    reason: "Refactor management_api.py to consume listener attrs — closes SD-024 root cause (private-attr fragility) across modules"
+  T008:
+    agent: "sre-engineer"
+    reason: "Counter rename in circuit_breaker.py — Prometheus metric semantics, operator-facing observability"
+  T009:
+    agent: "qa-expert"
+    reason: "Update test counter references — mechanical rename in test file"
+  T010:
+    agent: "qa-expert"
+    reason: "Stale-reference grep — SC-002 verification"
+  T011:
+    agent: "qa-expert"
+    reason: "No-private-attr grep — SD-024 root-cause closure verification per R3"
+  T012:
+    agent: "python-pro"
+    reason: "Run circuit-breaker test file — pytest execution and failure interpretation"
+  T013:
+    agent: "python-pro"
+    reason: "Run full unit suite + coverage gate — pytest execution and coverage interpretation"
+  T014:
+    agent: "devops-engineer"
+    reason: "Ruff check + format check — CI quality gate mirror"
+  T015:
+    agent: "git-workflow-manager"
+    reason: "Bundle commit with SD-024 reference in commit body — commit hygiene"
+  T016:
+    agent: "git-workflow-manager"
+    reason: "Push branch, open PR with metric-rename callout, monitor CI — PR lifecycle"

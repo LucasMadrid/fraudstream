@@ -526,40 +526,34 @@ async def get_circuit_breaker_state(request: Request) -> CircuitBreakerState:
             )
 
         cb = _circuit_breaker._cb
+        listener = _circuit_breaker.listener
 
-        # pybreaker's public API: current_state (str) and fail_counter (int).
-        # All other attributes are private and may change across pybreaker versions.
+        # pybreaker public API: current_state, fail_counter, reset_timeout.
+        # Transition timestamps come from the listener (SD-024) — never pybreaker private attrs.
         state: str = getattr(cb, "current_state", "unknown")
         failure_count: int = getattr(cb, "fail_counter", 0)
 
         span.set_attribute("circuit_breaker.state", state)
         span.set_attribute("circuit_breaker.failure_count", failure_count)
 
-        last_failure_time = None
+        last_failure_time = (
+            listener.last_failure_time.isoformat()
+            if listener.last_failure_time is not None
+            else None
+        )
+
         next_probe_time = None
-
-        try:
-            raw_failure = getattr(cb, "_last_failure_time", None)
-            if raw_failure is not None:
-                last_failure_time = datetime.fromtimestamp(
-                    float(raw_failure), tz=timezone.utc
-                ).isoformat()
-        except (AttributeError, OSError, ValueError, TypeError) as e:
-            logger.debug(
-                "Could not read _last_failure_time from circuit breaker: %s", type(e).__name__
-            )
-
-        try:
-            opened_at = getattr(cb, "_opened_at", None)
-            reset_timeout = getattr(cb, "reset_timeout", None)
-            if state == "open" and opened_at is not None and reset_timeout is not None:
-                probe_ts = float(opened_at) + float(reset_timeout)
+        opened_at = listener.opened_at
+        reset_timeout = getattr(cb, "reset_timeout", None)
+        if state == "open" and opened_at is not None and reset_timeout is not None:
+            try:
+                probe_ts = opened_at.timestamp() + float(reset_timeout)
                 if probe_ts > datetime.now(tz=timezone.utc).timestamp():
                     next_probe_time = datetime.fromtimestamp(probe_ts, tz=timezone.utc).isoformat()
-        except (AttributeError, OSError, ValueError, TypeError) as e:
-            logger.debug(
-                "Could not compute next_probe_time from circuit breaker: %s", type(e).__name__
-            )
+            except (OSError, ValueError, TypeError) as e:
+                logger.debug(
+                    "Could not compute next_probe_time from circuit breaker: %s", type(e).__name__
+                )
 
         return CircuitBreakerState(
             state=state,
