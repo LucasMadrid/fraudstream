@@ -10,7 +10,7 @@ from pipelines.scoring.circuit_breaker import (
     FraudCircuitBreakerListener,
     MLCircuitBreaker,
     ml_circuit_breaker_state,
-    ml_fallback_decisions_total,
+    ml_circuit_open_calls_total,
 )
 from pipelines.scoring.config import ScoringConfig
 from pipelines.scoring.ml_client import StubMLModelClient
@@ -86,14 +86,65 @@ class TestFraudCircuitBreakerListener:
         listener = FraudCircuitBreakerListener()
         mock_cb = MagicMock()
         mock_cb.current_state = "open"
-        before = ml_fallback_decisions_total._value.get()
+        before = ml_circuit_open_calls_total._value.get()
         listener.before_call(mock_cb, lambda: None)
-        assert ml_fallback_decisions_total._value.get() == before + 1.0
+        assert ml_circuit_open_calls_total._value.get() == before + 1.0
 
     def test_before_call_no_increment_when_closed(self):
         listener = FraudCircuitBreakerListener()
         mock_cb = MagicMock()
         mock_cb.current_state = "closed"
-        before = ml_fallback_decisions_total._value.get()
+        before = ml_circuit_open_calls_total._value.get()
         listener.before_call(mock_cb, lambda: None)
-        assert ml_fallback_decisions_total._value.get() == before
+        assert ml_circuit_open_calls_total._value.get() == before
+
+    # ── SD-024: open_at / last_failure_time observability ────────────────────
+
+    def test_initial_state_has_no_timestamps(self):
+        listener = FraudCircuitBreakerListener()
+        assert listener.opened_at is None
+        assert listener.last_failure_time is None
+
+    def test_failure_callback_sets_last_failure_time(self):
+        listener = FraudCircuitBreakerListener()
+        listener.failure(MagicMock(), Exception("boom"))
+        assert listener.last_failure_time is not None
+        assert listener.last_failure_time.tzinfo is not None
+
+    def test_state_change_to_open_sets_opened_at(self):
+        listener = FraudCircuitBreakerListener()
+        listener.state_change(MagicMock(), "closed", "open")
+        assert listener.opened_at is not None
+        assert listener.opened_at.tzinfo is not None
+
+    def test_state_change_to_closed_preserves_opened_at(self):
+        listener = FraudCircuitBreakerListener()
+        listener.state_change(MagicMock(), "closed", "open")
+        first_open = listener.opened_at
+        listener.state_change(MagicMock(), "open", "half_open")
+        listener.state_change(MagicMock(), "half_open", "closed")
+        assert listener.opened_at == first_open
+
+    def test_subsequent_open_overwrites_opened_at(self):
+        import time
+
+        listener = FraudCircuitBreakerListener()
+        listener.state_change(MagicMock(), "closed", "open")
+        first_open = listener.opened_at
+        time.sleep(0.01)
+        listener.state_change(MagicMock(), "open", "half_open")
+        listener.state_change(MagicMock(), "half_open", "closed")
+        listener.state_change(MagicMock(), "closed", "open")
+        assert listener.opened_at > first_open
+
+    def test_idempotent_open_does_not_reset_opened_at(self):
+        listener = FraudCircuitBreakerListener()
+        listener.state_change(MagicMock(), "closed", "open")
+        first_open = listener.opened_at
+        listener.state_change(MagicMock(), "open", "open")
+        assert listener.opened_at == first_open
+
+    def test_ml_circuit_breaker_exposes_listener(self):
+        client = StubMLModelClient(stub_score=0.1)
+        cb = MLCircuitBreaker(client, _config())
+        assert isinstance(cb.listener, FraudCircuitBreakerListener)

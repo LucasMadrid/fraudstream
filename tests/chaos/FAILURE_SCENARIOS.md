@@ -229,7 +229,7 @@ docker ps | grep ml-stub
    - Scoring requests immediately route to fallback mode (no more connection attempts)
 
 3. **Fallback Mode** (45-until recovery):
-   - `ml_fallback_decisions_total` increments for every scoring decision
+   - `ml_circuit_open_calls_total` increments for every scoring decision
    - Latency returns to normal: `scoring_latency_ms{quantile="p99"}` < 100ms
    - Fallback mode uses rule-based scoring (no ML inference)
    - No data loss; transactions are scored and persisted
@@ -291,7 +291,7 @@ docker ps | grep ml-stub
      CIRCUIT_STATE=$(curl -s 'http://localhost:9090/api/v1/query?query=ml_circuit_breaker_state{state="open"}' | jq '.data.result[0].value[1] // "0"')
      
      # Check fallback counter
-     FALLBACK=$(curl -s 'http://localhost:9090/api/v1/query?query=ml_fallback_decisions_total' | jq '.data.result[0].value[1] // "0"')
+     FALLBACK=$(curl -s 'http://localhost:9090/api/v1/query?query=ml_circuit_open_calls_total' | jq '.data.result[0].value[1] // "0"')
      
      # Check latency
      LATENCY=$(curl -s 'http://localhost:9090/api/v1/query?query=scoring_latency_ms{quantile="p99"}' | jq '.data.result[0].value[1] // "N/A"')
@@ -344,7 +344,7 @@ docker ps | grep ml-stub
 3. **Verify Normal Operation**:
    ```bash
    # Confirm fallback decisions stop incrementing
-   FALLBACK_FINAL=$(curl -s 'http://localhost:9090/api/v1/query?query=ml_fallback_decisions_total' | jq '.data.result[0].value[1]')
+   FALLBACK_FINAL=$(curl -s 'http://localhost:9090/api/v1/query?query=ml_circuit_open_calls_total' | jq '.data.result[0].value[1]')
    
    # Confirm scoring uses ML inference again
    curl -s 'http://localhost:9090/api/v1/query?query=ml_inference_total' | jq '.data.result[0].value[1]'
